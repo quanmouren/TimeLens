@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TimeLens</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="ico-64.png">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+    </div>
+    <div class="toast" id="toast"></div>
+
+    <main class="desktop-shell">
+        <header class="top-bar">
+            <button class="round-btn" type="button" onclick="changeDate(-1)" aria-label="前一天">‹</button>
+            <label class="date-control" for="datePicker">
+                <span>查看日期</span>
+                <input type="date" id="datePicker" onchange="onDateChange()">
+            </label>
+            <button class="pill-btn" type="button" onclick="goToday()">今天</button>
+        </header>
+
+        <div class="segmented">
+            <button class="segment active" data-view="daily" type="button" onclick="switchView('daily')">每天</button>
+            <button class="segment" data-view="weekly" type="button" onclick="switchView('weekly')">每周</button>
+            <button class="segment" data-view="monthly" type="button" onclick="switchView('monthly')">每月</button>
+            <button class="segment" data-view="yearly" type="button" onclick="switchView('yearly')">每年</button>
+            <button class="segment" data-view="total" type="button" onclick="switchView('total')">总计</button>
+        </div>
+
+        <div class="dashboard-grid">
+            <section class="section screen-section">
+                <div class="section-heading">
+                    <h1 class="section-title">屏幕时间</h1>
+                    <p class="updated" id="updatedAt">正在加载...</p>
+                </div>
+                <article class="screen-card">
+                    <div class="screen-header">
+                        <button class="mini-nav" type="button" onclick="changeDate(-1)" aria-label="前一天">‹</button>
+                        <div>
+                            <div class="date-label" id="dateLabel">--</div>
+                            <div class="total-time" id="totalTime">--</div>
+                        </div>
+                        <button class="mini-nav" type="button" onclick="changeDate(1)" aria-label="后一天">›</button>
+                    </div>
+
+                    <canvas class="weekly-bars" id="weeklyBars" width="720" height="190"></canvas>
+                    <canvas class="hourly-bars" id="hourlyBars" width="720" height="220"></canvas>
+
+                    <div class="category-summary">
+                        <div>
+                            <span class="cat-name cat-work">效率</span>
+                            <strong id="catOne">--</strong>
+                        </div>
+                        <div>
+                            <span class="cat-name cat-social">常用</span>
+                            <strong id="catTwo">--</strong>
+                        </div>
+                        <div>
+                            <span class="cat-name cat-fun">其他</span>
+                            <strong id="catThree">--</strong>
+                        </div>
+                    </div>
+                </article>
+            </section>
+
+            <section class="section list-section">
+                <div class="section-heading">
+                    <h2 class="section-title">最常使用</h2>
+                </div>
+                <article class="usage-list top-usage-list" id="usageList">
+                    <div class="empty-state">暂无数据，开始使用电脑后将自动记录</div>
+                </article>
+            </section>
+        </div>
+
+        <section class="section all-section">
+            <div class="section-heading">
+                <h2 class="section-title">所有使用</h2>
+                <p class="updated" id="allUsageDate">今天</p>
+            </div>
+            <article class="usage-list all-usage-list" id="allUsageList">
+                <div class="empty-state">暂无数据，开始使用电脑后将自动记录</div>
+            </article>
+        </section>
+    </main>
+
+    <script src="/static/app-categories.js"></script>
+    <script>
+        let currentView = 'daily';
+        let currentDate = '{{ default_date }}';
+        let trendBars = [];
+        let hourlyHours = [];
+        let currentApps = [];
+        let allUsageApps = [];
+        let isLoading = false;
+        const iconUrlCache = new Map();
+        const iconWarmCache = new Set();
+
+        const COLORS = ['#2f8dfb', '#5ac8d8', '#ff9f43', '#5f6368'];
+        function formatDuration(seconds) {
+            if (!seconds || seconds <= 0) return '0分钟';
+            const mins = Math.floor(seconds / 60);
+            if (mins < 1) return '不到1分钟';
+            if (mins < 60) return `${mins}分钟`;
+            const h = Math.floor(mins / 60);
+            const m = mins % 60;
+            return m > 0 ? `${h}小时${m}分钟` : `${h}小时`;
+        }
+
+        function parseLocalDate(dateStr) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        function todayStr() {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        function dateLabel(dateStr) {
+            const d = parseLocalDate(dateStr);
+            const suffix = dateStr === todayStr() ? ' 今天' : '';
+            return `${d.getMonth() + 1}月${d.getDate()}日${suffix}`;
+        }
+
+        function periodLabel(period) {
+            if (currentView === 'daily') return dateLabel(currentDate);
+            return period.title || dateLabel(currentDate);
+        }
+
+        function showLoading() {
+            if (isLoading) return;
+            isLoading = true;
+            document.getElementById('loadingOverlay').classList.add('visible');
+        }
+
+        function hideLoading() {
+            isLoading = false;
+            document.getElementById('loadingOverlay').classList.remove('visible');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('visible');
+            setTimeout(() => toast.classList.remove('visible'), 2400);
+        }
+
+        function switchView(view) {
+            currentView = view;
+            document.querySelectorAll('.segment').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.view === view);
+            });
+            loadData();
+        }
+
+        function changeDate(delta) {
+            const d = parseLocalDate(currentDate);
+            if (currentView === 'weekly') {
+                d.setDate(d.getDate() + delta * 7);
+            } else if (currentView === 'monthly') {
+                d.setMonth(d.getMonth() + delta);
+            } else if (currentView === 'yearly') {
+                d.setFullYear(d.getFullYear() + delta);
+            } else if (currentView === 'total') {
+                return;
+            } else {
+                d.setDate(d.getDate() + delta);
+            }
+            const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            currentDate = next > todayStr() ? todayStr() : next;
+            document.getElementById('datePicker').value = currentDate;
+            loadData();
+        }
+
+        function goToday() {
+            currentDate = todayStr();
+            document.getElementById('datePicker').value = currentDate;
+            loadData();
+        }
+
+        function onDateChange() {
+            const val = document.getElementById('datePicker').value;
+            if (val && val <= todayStr()) {
+                currentDate = val;
+                loadData();
+            }
+        }
+
+        async function loadData(silent = false) {
+            if (!silent) showLoading();
+            try {
+                const [periodRes, hourlyRes, trendRes] = await Promise.all([
+                    fetch(`/api/period?view=${currentView}&date=${currentDate}`),
+                    fetch(`/api/hourly?date=${currentDate}`),
+                    fetch(`/api/period?view=weekly&date=${currentDate}`),
+                ]);
+                const period = await periodRes.json();
+                const hourly = await hourlyRes.json();
+                const trend = await trendRes.json();
+
+                currentApps = period.apps || [];
+                allUsageApps = period.apps || [];
+                hourlyHours = hourly.hours || [];
+                trendBars = currentView === 'daily' ? (trend.bars || []) : (period.bars || []);
+
+                document.getElementById('totalTime').textContent = formatDuration(period.total_seconds);
+                document.getElementById('dateLabel').textContent = periodLabel(period);
+                document.getElementById('updatedAt').textContent = `更新于：${new Date().toLocaleString('zh-CN', {
+                    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                })}`;
+
+                renderSummary(currentApps);
+                warmIcons([...currentApps, ...allUsageApps]);
+                renderTrendBars(trendBars, currentView);
+                document.getElementById('hourlyBars').style.display = currentView === 'daily' ? 'block' : 'none';
+                if (currentView === 'daily') renderHourlyBars(hourlyHours);
+                renderUsageList(currentApps, period.total_seconds || 1);
+                document.getElementById('allUsageDate').textContent = periodLabel(period);
+                renderAllUsageList(allUsageApps, period.total_seconds || 1);
+            } catch (e) {
+                console.error(e);
+                if (!silent) showToast('数据加载失败，请稍后重试');
+            } finally {
+                if (!silent) hideLoading();
+            }
+        }
+
+        function renderSummary(apps) {
+            const totals = {
+                productivity: 0,
+                common: 0,
+                other: 0,
+            };
+
+            apps.forEach(app => {
+                totals[TimeLensCategories.getAppCategory(app)] += app.total_seconds || 0;
+            });
+
+            [
+                ['catOne', 'productivity'],
+                ['catTwo', 'common'],
+                ['catThree', 'other'],
+            ].forEach(([id, category]) => {
+                document.getElementById(id).textContent = formatDuration(totals[category]);
+            });
+        }
+
+        function setupCanvas(canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const scale = window.devicePixelRatio || 1;
+            canvas.width = Math.floor(rect.width * scale);
+            canvas.height = Math.floor(rect.height * scale);
+            const ctx = canvas.getContext('2d');
+            ctx.scale(scale, scale);
+            return { ctx, w: rect.width, h: rect.height };
+        }
+
+        function drawGrid(ctx, w, h, top, bottom) {
+            ctx.strokeStyle = 'rgba(60, 60, 67, .12)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 4; i += 1) {
+                const y = top + (h - top - bottom) * i / 3;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y);
+                ctx.stroke();
+            }
+        }
+
+        function renderTrendBars(items, view) {
+            const canvas = document.getElementById('weeklyBars');
+            const { ctx, w, h } = setupCanvas(canvas);
+            ctx.clearRect(0, 0, w, h);
+            drawGrid(ctx, w, h, 10, 30);
+            if (!items.length) return;
+            const max = Math.max(...items.map(d => d.total_seconds), 3600);
+            const gap = w / items.length;
+            const barW = Math.min(view === 'monthly' ? 12 : 36, gap * .5);
+            const labels = ['日', '一', '二', '三', '四', '五', '六'];
+            const selectedDate = currentDate;
+
+            items.forEach((item, i) => {
+                const x = gap * i + gap / 2 - barW / 2;
+                const height = Math.max(3, (item.total_seconds / max) * (h - 48));
+                const y = h - 32 - height;
+                const isSelected = item.date === selectedDate;
+                ctx.fillStyle = view === 'daily' && !isSelected ? 'rgba(60, 60, 67, .18)' : '#5ac8d8';
+                ctx.beginPath();
+                ctx.roundRect(x, y, barW, height, 5);
+                ctx.fill();
+                if (isSelected && item.total_seconds > 0) {
+                    ctx.fillStyle = '#ff9f43';
+                    ctx.fillRect(x, y, barW, Math.min(8, height));
+                }
+                const shouldLabel = view !== 'monthly' || i % 5 === 0 || i === items.length - 1;
+                if (!shouldLabel) return;
+                ctx.fillStyle = 'rgba(60, 60, 67, .58)';
+                ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+                ctx.textAlign = 'center';
+                const label = item.label || (item.date ? labels[parseLocalDate(item.date).getDay()] : '');
+                ctx.fillText(label, x + barW / 2, h - 9);
+            });
+        }
+
+        function renderHourlyBars(hours) {
+            const canvas = document.getElementById('hourlyBars');
+            const { ctx, w, h } = setupCanvas(canvas);
+            ctx.clearRect(0, 0, w, h);
+            drawGrid(ctx, w, h, 8, 30);
+            const max = Math.max(...hours.map(v => v.total_seconds), 1800);
+            const gap = w / 24;
+            const barW = Math.max(5, gap * .62);
+            hours.forEach((hour, i) => {
+                const height = Math.max(hour.total_seconds ? 3 : 0, (hour.total_seconds / max) * (h - 48));
+                const x = gap * i + (gap - barW) / 2;
+                const y = h - 30 - height;
+                const c1 = height * .55;
+                const c2 = height * .28;
+                const c3 = height - c1 - c2;
+                ctx.fillStyle = COLORS[0];
+                ctx.fillRect(x, y + c2 + c3, barW, c1);
+                ctx.fillStyle = COLORS[1];
+                ctx.fillRect(x, y + c3, barW, c2);
+                ctx.fillStyle = COLORS[2];
+                ctx.fillRect(x, y, barW, c3);
+            });
+
+            ctx.fillStyle = 'rgba(60, 60, 67, .56)';
+            ctx.font = '13px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.textAlign = 'left';
+            [['上午12时', 4], ['上午6时', 10], ['下午12时', 16], ['下午6时', 22]].forEach(([label, pos]) => {
+                ctx.fillText(label, (w / 24) * pos - 44, h - 7);
+            });
+        }
+
+        function renderUsageList(apps, totalSeconds) {
+            renderAppRows({
+                listId: 'usageList',
+                apps: apps.slice(0, 8),
+                totalSeconds,
+                emptyText: '暂无数据，开始使用电脑后将自动记录',
+                showChevron: false,
+            });
+        }
+
+        function renderAllUsageList(apps, totalSeconds) {
+            renderAppRows({
+                listId: 'allUsageList',
+                apps,
+                totalSeconds,
+                emptyText: '今天暂无使用记录',
+                showChevron: false,
+            });
+        }
+
+        function renderAppRows({ listId, apps, totalSeconds, emptyText, showChevron }) {
+            const list = document.getElementById(listId);
+            if (!list._rowCache) list._rowCache = new Map();
+
+            if (!apps.length) {
+                list._rowCache.clear();
+                list.innerHTML = `<div class="empty-state">${emptyText}</div>`;
+                return;
+            }
+
+            const emptyState = list.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+
+            const max = Math.max(...apps.map(a => a.total_seconds), 1);
+            const activeKeys = new Set();
+            apps.forEach(app => {
+                const processName = app.process_name || `${app.app_name}.exe`;
+                const key = `${app.app_name}|${processName}`;
+                activeKeys.add(key);
+
+                let row = list._rowCache.get(key);
+                if (!row) {
+                    row = createUsageRow(app, processName, showChevron);
+                    list._rowCache.set(key, row);
+                }
+
+                const percent = Math.max(3, Math.round(app.total_seconds / max * 100));
+                const share = Math.round(app.total_seconds / totalSeconds * 100);
+                row.querySelector('.usage-title span').textContent = app.app_name;
+                row.querySelector('.usage-title small').textContent = formatDuration(app.total_seconds);
+                row.querySelector('.progress-track').title = `${share}%`;
+                row.querySelector('.progress-fill').style.width = `${percent}%`;
+                list.appendChild(row);
+            });
+
+            for (const [key, row] of list._rowCache.entries()) {
+                if (!activeKeys.has(key)) {
+                    row.remove();
+                    list._rowCache.delete(key);
+                }
+            }
+        }
+
+        function createUsageRow(app, processName, showChevron) {
+            const row = document.createElement('div');
+            row.className = 'usage-row';
+
+            const icon = document.createElement('div');
+            icon.className = 'app-icon';
+            const img = document.createElement('img');
+            img.loading = 'eager';
+            img.decoding = 'async';
+            img.src = getIconUrl(processName);
+            img.alt = '';
+            img.onerror = () => img.remove();
+            const initials = document.createElement('span');
+            initials.textContent = (app.app_name || '?').trim().slice(0, 1).toUpperCase();
+            icon.append(img, initials);
+
+            const main = document.createElement('div');
+            main.className = 'usage-main';
+            const title = document.createElement('div');
+            title.className = 'usage-title';
+            const name = document.createElement('span');
+            const duration = document.createElement('small');
+            title.append(name, duration);
+            const track = document.createElement('div');
+            track.className = 'progress-track';
+            const fill = document.createElement('div');
+            fill.className = 'progress-fill';
+            track.appendChild(fill);
+            main.append(title, track);
+
+            row.append(icon, main);
+            if (showChevron) {
+                const chevron = document.createElement('div');
+                chevron.className = 'chevron';
+                chevron.textContent = '›';
+                row.appendChild(chevron);
+            }
+            return row;
+        }
+
+        function getIconUrl(processName) {
+            if (!iconUrlCache.has(processName)) {
+                iconUrlCache.set(processName, `/api/icon/${encodeURIComponent(processName)}`);
+            }
+            return iconUrlCache.get(processName);
+        }
+
+        function warmIcons(apps) {
+            apps.forEach(app => {
+                const processName = app.process_name || `${app.app_name}.exe`;
+                if (iconWarmCache.has(processName)) return;
+                iconWarmCache.add(processName);
+                const img = new Image();
+                img.src = getIconUrl(processName);
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            renderTrendBars(trendBars, currentView);
+            if (currentView === 'daily') renderHourlyBars(hourlyHours);
+        });
+
+        (function init() {
+            document.getElementById('datePicker').value = currentDate;
+            document.getElementById('datePicker').max = todayStr();
+            loadData();
+            setInterval(() => loadData(true), 5000);
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+pywin32>=306
+psutil>=5.9
+flask>=3.0
+pystray>=0.19
+Pillow>=10.0
