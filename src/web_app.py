@@ -1,3 +1,4 @@
+import ctypes
 import re
 import io
 import os
@@ -33,27 +34,90 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 _ICON_CACHE: dict[str, bytes] = {}
-_EXE_PATH_CACHE: dict[str, str] = {}
+_EXE_PATH_CACHE: dict[str, tuple[str, int] | None] = {}
+_ICON_SIZE = 32
 
-def _resolve_exe_path(process_name: str) -> str | None:
-    key = process_name.lower()
+
+class _SHFILEINFOW(ctypes.Structure):
+    _fields_ = [
+        ("hIcon", ctypes.c_void_p),
+        ("iIcon", ctypes.c_int),
+        ("dwAttributes", ctypes.c_ulong),
+        ("szDisplayName", ctypes.c_wchar * 260),
+        ("szTypeName", ctypes.c_wchar * 80),
+    ]
+
+
+def _clean_icon_path(path: str) -> str:
+    path = os.path.expandvars((path or "").strip().strip('"'))
+    if path.startswith("@"):
+        path = path[1:]
+    return path
+
+
+def _parse_icon_location(value: str) -> tuple[str, int]:
+    value = (value or "").strip()
+    if value.startswith('"') and '"' in value[1:]:
+        end_quote = value.find('"', 1)
+        path = _clean_icon_path(value[1:end_quote])
+        rest = value[end_quote + 1:].strip()
+        if rest.startswith(","):
+            try:
+                return path, int(rest[1:].strip())
+            except ValueError:
+                return path, 0
+        return path, 0
+
+    if "," in value:
+        path, index = value.rsplit(",", 1)
+        try:
+            return _clean_icon_path(path), int(index.strip())
+        except ValueError:
+            pass
+    return value, 0
+
+
+def _existing_icon_location(value: str) -> tuple[str, int] | None:
+    path, index = _parse_icon_location(value)
+    if path and os.path.exists(path):
+        return path, index
+    return None
+
+
+def _matches_app_key(text: str, process_name: str, app_name: str = "") -> bool:
+    text = (text or "").lower()
+    process = (process_name or "").lower()
+    process_stem = process[:-4] if process.endswith(".exe") else process
+    app = (app_name or "").lower()
+    return bool(
+        (process and process in text)
+        or (process_stem and process_stem in text)
+        or (app and app in text)
+    )
+
+def _resolve_exe_path(process_name: str, app_name: str = "", exe_path: str = "") -> tuple[str, int] | None:
+    explicit = _existing_icon_location(exe_path)
+    if explicit:
+        return explicit
+
+    key = f"{process_name.lower()}|{app_name.lower()}"
     if key in _EXE_PATH_CACHE:
-        return _EXE_PATH_CACHE[key] or None
+        return _EXE_PATH_CACHE[key]
 
     path = shutil.which(process_name)
     if path:
-        _EXE_PATH_CACHE[key] = path
-        return path
+        _EXE_PATH_CACHE[key] = (path, 0)
+        return path, 0
 
     try:
         import psutil
 
         for proc in psutil.process_iter(["name", "exe"]):
-            if (proc.info.get("name") or "").lower() == key:
+            if (proc.info.get("name") or "").lower() == process_name.lower():
                 exe = proc.info.get("exe")
                 if exe and os.path.exists(exe):
-                    _EXE_PATH_CACHE[key] = exe
-                    return exe
+                    _EXE_PATH_CACHE[key] = (exe, 0)
+                    return exe, 0
     except Exception:
         pass
 
@@ -67,79 +131,154 @@ def _resolve_exe_path(process_name: str) -> str | None:
                 with winreg.OpenKey(root, subkey) as key_handle:
                     exe, _ = winreg.QueryValueEx(key_handle, "")
                     if exe and os.path.exists(exe):
-                        _EXE_PATH_CACHE[key] = exe
-                        return exe
+                        _EXE_PATH_CACHE[key] = (exe, 0)
+                        return exe, 0
             except OSError:
                 continue
 
-    _EXE_PATH_CACHE[key] = ""
+    uninstall_roots = (
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+    )
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for subkey in uninstall_roots:
+            try:
+                with winreg.OpenKey(root, subkey) as uninstall_key:
+                    for i in range(winreg.QueryInfoKey(uninstall_key)[0]):
+                        try:
+                            child_name = winreg.EnumKey(uninstall_key, i)
+                            with winreg.OpenKey(uninstall_key, child_name) as child_key:
+                                display_name = ""
+                                display_icon = ""
+                                try:
+                                    display_name, _ = winreg.QueryValueEx(child_key, "DisplayName")
+                                except OSError:
+                                    pass
+                                try:
+                                    display_icon, _ = winreg.QueryValueEx(child_key, "DisplayIcon")
+                                except OSError:
+                                    pass
+
+                                if not display_icon:
+                                    continue
+                                if not _matches_app_key(display_name, process_name, app_name):
+                                    continue
+
+                                icon_location = _existing_icon_location(display_icon)
+                                if icon_location:
+                                    _EXE_PATH_CACHE[key] = icon_location
+                                    return icon_location
+                        except OSError:
+                            continue
+            except OSError:
+                continue
+
+    _EXE_PATH_CACHE[key] = None
     return None
 
-def _extract_icon_bytes(process_name: str) -> bytes | None:
-    if process_name in _ICON_CACHE:
-        return _ICON_CACHE[process_name]
+
+def _icon_handle_from_shell(path: str):
+    shinfo = _SHFILEINFOW()
+    flags = 0x000000100 | 0x000000000
+    result = ctypes.windll.shell32.SHGetFileInfoW(
+        path,
+        0,
+        ctypes.byref(shinfo),
+        ctypes.sizeof(shinfo),
+        flags,
+    )
+    return shinfo.hIcon if result else None
+
+
+def _draw_icon_to_png(hicon) -> bytes | None:
+    import win32gui
+    import win32ui
+
+    screen_dc = win32gui.GetDC(0)
+    hdc = win32ui.CreateDCFromHandle(screen_dc)
+    mem_dc = hdc.CreateCompatibleDC()
+    bmp = win32ui.CreateBitmap()
+    bmp.CreateCompatibleBitmap(hdc, _ICON_SIZE, _ICON_SIZE)
+    old_bmp = mem_dc.SelectObject(bmp)
+    brush = win32gui.GetStockObject(0)
+    win32gui.FillRect(mem_dc.GetSafeHdc(), (0, 0, _ICON_SIZE, _ICON_SIZE), brush)
+    win32gui.DrawIconEx(
+        mem_dc.GetSafeHdc(),
+        0,
+        0,
+        hicon,
+        _ICON_SIZE,
+        _ICON_SIZE,
+        0,
+        None,
+        3,
+    )
+
+    bmp_info = bmp.GetInfo()
+    bmp_bits = bmp.GetBitmapBits(True)
+    img = Image.frombuffer(
+        "RGB",
+        (bmp_info["bmWidth"], bmp_info["bmHeight"]),
+        bmp_bits,
+        "raw",
+        "BGRX",
+        0,
+        1,
+    ).convert("RGBA")
+
+    mem_dc.SelectObject(old_bmp)
+    mem_dc.DeleteDC()
+    hdc.DeleteDC()
+    win32gui.ReleaseDC(0, screen_dc)
+
+    img = img.resize((24, 24), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _extract_icon_bytes(process_name: str, app_name: str = "", exe_path: str = "") -> bytes | None:
+    cache_key = "|".join([process_name or "", app_name or "", exe_path or ""])
+    if cache_key in _ICON_CACHE:
+        return _ICON_CACHE[cache_key]
 
     try:
         import win32gui
-        import win32ui
 
-        exe_path = _resolve_exe_path(process_name)
-        if not exe_path:
-            _ICON_CACHE[process_name] = b""
+        icon_location = _resolve_exe_path(process_name, app_name, exe_path)
+        if not icon_location:
+            _ICON_CACHE[cache_key] = b""
+            return None
+        resolved_path, icon_index = icon_location
+
+        large_icons, small_icons = win32gui.ExtractIconEx(resolved_path, icon_index, 1)
+        hicon = large_icons[0] if large_icons else small_icons[0] if small_icons else None
+        destroy_icons = large_icons + small_icons
+        if not hicon:
+            hicon = _icon_handle_from_shell(resolved_path)
+            destroy_icons = [hicon] if hicon else []
+
+        if not hicon:
+            _ICON_CACHE[cache_key] = b""
             return None
 
-        large_icons, small_icons = win32gui.ExtractIconEx(exe_path, 0, 1)
-        if not large_icons and not small_icons:
-            _ICON_CACHE[process_name] = b""
-            return None
+        icon_bytes = _draw_icon_to_png(hicon)
+        for icon in destroy_icons:
+            if icon:
+                win32gui.DestroyIcon(icon)
 
-        hicon = large_icons[0] if large_icons else small_icons[0]
-        screen_dc = win32gui.GetDC(0)
-        hdc = win32ui.CreateDCFromHandle(screen_dc)
-        mem_dc = hdc.CreateCompatibleDC()
-        bmp = win32ui.CreateBitmap()
-        bmp.CreateCompatibleBitmap(hdc, 32, 32)
-        old_bmp = mem_dc.SelectObject(bmp)
-        white_brush = win32gui.GetStockObject(0)
-        win32gui.FillRect(mem_dc.GetSafeHdc(), (0, 0, 32, 32), white_brush)
-        win32gui.DrawIconEx(mem_dc.GetSafeHdc(), 0, 0, hicon, 32, 32, 0, None, 3)
-
-        bmp_info = bmp.GetInfo()
-        bmp_bits = bmp.GetBitmapBits(True)
-        img = Image.frombuffer(
-            "RGB",
-            (bmp_info["bmWidth"], bmp_info["bmHeight"]),
-            bmp_bits,
-            "raw",
-            "BGRX",
-            0,
-            1,
-        ).convert("RGBA")
-
-        mem_dc.SelectObject(old_bmp)
-        mem_dc.DeleteDC()
-        hdc.DeleteDC()
-        win32gui.ReleaseDC(0, screen_dc)
-        for icon in large_icons + small_icons:
-            win32gui.DestroyIcon(icon)
-
-        if img.width != 24 or img.height != 24:
-            img = img.resize((24, 24), Image.LANCZOS)
-
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        icon_bytes = buf.getvalue()
-
-        _ICON_CACHE[process_name] = icon_bytes
+        _ICON_CACHE[cache_key] = icon_bytes or b""
         return icon_bytes
 
     except Exception:
-        _ICON_CACHE[process_name] = b""
+        _ICON_CACHE[cache_key] = b""
         return None
 
 @app.route("/api/icon/<process_name>")
 def api_icon(process_name: str):
-    icon_bytes = _extract_icon_bytes(process_name)
+    app_name = request.args.get("app", "")
+    exe_path = request.args.get("path", "")
+    icon_bytes = _extract_icon_bytes(process_name, app_name, exe_path)
     if icon_bytes:
         response = make_response(send_file(io.BytesIO(icon_bytes), mimetype="image/png"))
         response.headers["Cache-Control"] = "public, max-age=604800, immutable"

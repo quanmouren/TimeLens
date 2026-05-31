@@ -29,6 +29,7 @@ _IGNORED_LOWER = {p.lower() for p in IGNORED_PROCESSES}
 POLL_INTERVAL = 1
 IDLE_CHECK_INTERVAL = 60
 IDLE_GRACE_SECONDS = 30 * 60
+ACTIVE_FLUSH_INTERVAL_SECONDS = 10
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -48,7 +49,7 @@ def _get_idle_seconds() -> float:
     return idle_ms / 1000
 
 
-def _get_foreground_info() -> tuple[str, str, str] | None:
+def _get_foreground_info() -> tuple[str, str, str, str] | None:
     try:
         hwnd = win32gui.GetForegroundWindow()
         if not hwnd:
@@ -64,6 +65,10 @@ def _get_foreground_info() -> tuple[str, str, str] | None:
         try:
             proc = psutil.Process(pid)
             process_name = proc.name()
+            try:
+                exe_path = proc.exe()
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                exe_path = ""
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return None
 
@@ -78,7 +83,7 @@ def _get_foreground_info() -> tuple[str, str, str] | None:
         if app_name.lower().endswith(".exe"):
             app_name = app_name[:-4]
 
-        return process_name, app_name, window_title
+        return process_name, app_name, exe_path, window_title
 
     except Exception:
         return None
@@ -89,6 +94,7 @@ class AppMonitor:
         self._running = False
         self._thread: threading.Thread | None = None
         self._current_process: str | None = None
+        self._current_exe_path: str | None = None
         self._current_app: str | None = None
         self._current_title: str | None = None
         self._current_start: datetime | None = None
@@ -102,6 +108,7 @@ class AppMonitor:
                 insert_usage(
                     app_name=self._current_app,
                     process_name=self._current_process or "Unknown",
+                    exe_path=self._current_exe_path or "",
                     window_title=self._current_title or "",
                     start_time=self._current_start,
                     end_time=now,
@@ -109,9 +116,17 @@ class AppMonitor:
             except Exception:
                 logger.exception("写入使用记录失败")
         self._current_process = None
+        self._current_exe_path = None
         self._current_app = None
         self._current_title = None
         self._current_start = None
+
+    def _restart_current(self, process_name: str, app_name: str, exe_path: str, window_title: str):
+        self._current_process = process_name
+        self._current_exe_path = exe_path
+        self._current_app = app_name
+        self._current_title = window_title
+        self._current_start = datetime.now()
 
     def _monitor_loop(self):
         last_idle_check = 0.0
@@ -136,16 +151,22 @@ class AppMonitor:
                 info = _get_foreground_info()
 
                 if info:
-                    process_name, app_name, window_title = info
+                    process_name, app_name, exe_path, window_title = info
 
                     if app_name != self._current_app:
                         self._flush_current()
-                        self._current_process = process_name
-                        self._current_app = app_name
-                        self._current_title = window_title
-                        self._current_start = datetime.now()
+                        self._restart_current(process_name, app_name, exe_path, window_title)
                     else:
+                        if exe_path:
+                            self._current_exe_path = exe_path
                         self._current_title = window_title
+                        now = datetime.now()
+                        if (
+                            self._current_start
+                            and (now - self._current_start).total_seconds() >= ACTIVE_FLUSH_INTERVAL_SECONDS
+                        ):
+                            self._flush_current(end_time=now)
+                            self._restart_current(process_name, app_name, exe_path, window_title)
                 else:
                     self._flush_current()
 

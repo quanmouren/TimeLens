@@ -97,8 +97,11 @@
         let currentApps = [];
         let allUsageApps = [];
         let isLoading = false;
+        let isRefreshing = false;
+        let lastKnownToday = todayStr();
         const iconUrlCache = new Map();
         const iconWarmCache = new Set();
+        const AUTO_REFRESH_MS = 1000;
 
         const COLORS = ['#2f8dfb', '#5ac8d8', '#ff9f43', '#5f6368'];
         function formatDuration(seconds) {
@@ -191,7 +194,46 @@
             }
         }
 
+        function viewIncludesToday() {
+            const today = todayStr();
+            if (currentView === 'total') return true;
+            const selected = parseLocalDate(currentDate);
+            const now = parseLocalDate(today);
+            if (currentView === 'daily') return currentDate === today;
+            if (currentView === 'weekly') {
+                const start = new Date(selected);
+                start.setDate(start.getDate() - 6);
+                return start <= now && now <= selected;
+            }
+            if (currentView === 'monthly') {
+                return selected.getFullYear() === now.getFullYear()
+                    && selected.getMonth() === now.getMonth();
+            }
+            if (currentView === 'yearly') {
+                return selected.getFullYear() === now.getFullYear();
+            }
+            return false;
+        }
+
+        function syncTodayBoundary() {
+            const today = todayStr();
+            document.getElementById('datePicker').max = today;
+            if (currentDate === lastKnownToday && today !== lastKnownToday) {
+                currentDate = today;
+                document.getElementById('datePicker').value = currentDate;
+            }
+            lastKnownToday = today;
+        }
+
+        async function autoRefreshData() {
+            syncTodayBoundary();
+            if (!viewIncludesToday() || document.hidden || isRefreshing) return;
+            await loadData(true);
+        }
+
         async function loadData(silent = false) {
+            if (isRefreshing) return;
+            isRefreshing = true;
             if (!silent) showLoading();
             try {
                 const [periodRes, hourlyRes, trendRes] = await Promise.all([
@@ -226,6 +268,7 @@
                 console.error(e);
                 if (!silent) showToast('数据加载失败，请稍后重试');
             } finally {
+                isRefreshing = false;
                 if (!silent) hideLoading();
             }
         }
@@ -410,7 +453,7 @@
             const img = document.createElement('img');
             img.loading = 'eager';
             img.decoding = 'async';
-            img.src = getIconUrl(processName);
+            img.src = getIconUrl(app);
             img.alt = '';
             img.onerror = () => img.remove();
             const initials = document.createElement('span');
@@ -441,20 +484,30 @@
             return row;
         }
 
-        function getIconUrl(processName) {
-            if (!iconUrlCache.has(processName)) {
-                iconUrlCache.set(processName, `/api/icon/${encodeURIComponent(processName)}`);
+        function getIconUrl(app) {
+            const processName = app.process_name || `${app.app_name}.exe`;
+            const key = `${app.app_name || ''}|${processName}|${app.exe_path || ''}`;
+            if (!iconUrlCache.has(key)) {
+                const params = new URLSearchParams();
+                if (app.app_name) params.set('app', app.app_name);
+                if (app.exe_path) params.set('path', app.exe_path);
+                const query = params.toString();
+                iconUrlCache.set(
+                    key,
+                    `/api/icon/${encodeURIComponent(processName)}${query ? `?${query}` : ''}`
+                );
             }
-            return iconUrlCache.get(processName);
+            return iconUrlCache.get(key);
         }
 
         function warmIcons(apps) {
             apps.forEach(app => {
                 const processName = app.process_name || `${app.app_name}.exe`;
-                if (iconWarmCache.has(processName)) return;
-                iconWarmCache.add(processName);
+                const key = `${app.app_name || ''}|${processName}|${app.exe_path || ''}`;
+                if (iconWarmCache.has(key)) return;
+                iconWarmCache.add(key);
                 const img = new Image();
-                img.src = getIconUrl(processName);
+                img.src = getIconUrl(app);
             });
         }
 
@@ -467,7 +520,10 @@
             document.getElementById('datePicker').value = currentDate;
             document.getElementById('datePicker').max = todayStr();
             loadData();
-            setInterval(() => loadData(true), 5000);
+            setInterval(autoRefreshData, AUTO_REFRESH_MS);
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) autoRefreshData();
+            });
         })();
     </script>
 </body>

@@ -36,6 +36,7 @@ def init_db():
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 app_name    TEXT NOT NULL,
                 process_name TEXT NOT NULL,
+                exe_path    TEXT NOT NULL DEFAULT '',
                 window_title TEXT NOT NULL DEFAULT '',
                 start_time  TEXT NOT NULL,
                 end_time    TEXT NOT NULL,
@@ -51,20 +52,29 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_app_usage_app_name
             ON app_usage(app_name, date)
         """)
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(app_usage)").fetchall()
+        }
+        if "exe_path" not in columns:
+            conn.execute(
+                "ALTER TABLE app_usage ADD COLUMN exe_path TEXT NOT NULL DEFAULT ''"
+            )
 
-def insert_usage(app_name: str, process_name: str, window_title: str,
+def insert_usage(app_name: str, process_name: str, exe_path: str, window_title: str,
                  start_time: datetime, end_time: datetime):
     duration = (end_time - start_time).total_seconds()
     if duration < 1:
         return
     with get_connection() as conn:
         conn.execute("""
-            INSERT INTO app_usage (app_name, process_name, window_title,
+            INSERT INTO app_usage (app_name, process_name, exe_path, window_title,
                                    start_time, end_time, duration_seconds, date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             app_name,
             process_name,
+            exe_path,
             window_title,
             start_time.isoformat(),
             end_time.isoformat(),
@@ -84,24 +94,27 @@ def query_daily_summary(date_str: str) -> list[dict]:
             ORDER BY total_seconds DESC
         """, (date_str,)).fetchall()
         proc_rows = conn.execute("""
-            SELECT app_name, process_name, COUNT(*) AS cnt
+            SELECT app_name, process_name, exe_path, COUNT(*) AS cnt
             FROM app_usage
             WHERE date = ?
-            GROUP BY app_name, process_name
+            GROUP BY app_name, process_name, exe_path
         """, (date_str,)).fetchall()
 
     proc_map: dict[str, str] = {}
+    exe_map: dict[str, str] = {}
     proc_cnt: dict[str, int] = {}
     for pr in proc_rows:
-        an, pn, cnt = pr["app_name"], pr["process_name"], pr["cnt"]
+        an, pn, ep, cnt = pr["app_name"], pr["process_name"], pr["exe_path"], pr["cnt"]
         if an not in proc_map or cnt > proc_cnt[an]:
             proc_map[an] = pn
+            exe_map[an] = ep
             proc_cnt[an] = cnt
 
     result = []
     for r in rows:
         d = dict(r)
         d["process_name"] = proc_map.get(d["app_name"], "")
+        d["exe_path"] = exe_map.get(d["app_name"], "")
         result.append(d)
     return result
 
@@ -117,24 +130,27 @@ def query_app_summary_between(start_date: str, end_date: str) -> list[dict]:
             ORDER BY total_seconds DESC
         """, (start_date, end_date)).fetchall()
         proc_rows = conn.execute("""
-            SELECT app_name, process_name, COUNT(*) AS cnt
+            SELECT app_name, process_name, exe_path, COUNT(*) AS cnt
             FROM app_usage
             WHERE date BETWEEN ? AND ?
-            GROUP BY app_name, process_name
+            GROUP BY app_name, process_name, exe_path
         """, (start_date, end_date)).fetchall()
 
     proc_map: dict[str, str] = {}
+    exe_map: dict[str, str] = {}
     proc_cnt: dict[str, int] = {}
     for pr in proc_rows:
-        an, pn, cnt = pr["app_name"], pr["process_name"], pr["cnt"]
+        an, pn, ep, cnt = pr["app_name"], pr["process_name"], pr["exe_path"], pr["cnt"]
         if an not in proc_map or cnt > proc_cnt[an]:
             proc_map[an] = pn
+            exe_map[an] = ep
             proc_cnt[an] = cnt
 
     result = []
     for r in rows:
         d = dict(r)
         d["process_name"] = proc_map.get(d["app_name"], "")
+        d["exe_path"] = exe_map.get(d["app_name"], "")
         result.append(d)
     return result
 
