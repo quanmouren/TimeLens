@@ -1,40 +1,40 @@
-# 第三方许可证说明
+# Third-Party Notices
 
-本项目依赖以下第三方 Python 软件包。此处列出的版本为整理本说明时开发环境中实际检测到的版本。
+This file lists third-party Python packages used by TimeLens and the license files collected from the clean virtual environment created for this project.
 
-## 直接依赖
+Generated from:
 
-| 软件包 | 版本 | 许可证 | 用途 |
-| --- | ---: | --- | --- |
-| pywin32 | 308 | Python Software Foundation License | Windows foreground window and icon APIs |
-| psutil | 6.0.0 | BSD-3-Clause | Process inspection |
-| Flask | 3.0.0 | BSD-3-Clause | Local web dashboard and API server |
-| pystray | 0.19.5 | LGPL-3.0 | Windows system tray integration |
-| Pillow | 10.4.0 | HPND | Image/icon handling |
+- `src/requirements.txt`
+- `src/venv` package metadata
 
-## 间接运行时依赖
+## Direct Dependencies
 
-| 软件包 | 版本 | 许可证 | 被谁依赖 |
-| --- | ---: | --- | --- |
-| blinker | 1.9.0 | MIT | Flask |
-| click | 8.1.7 | BSD-3-Clause | Flask |
-| itsdangerous | 2.2.0 | BSD-3-Clause | Flask |
-| Jinja2 | 3.1.6 | BSD-3-Clause | Flask |
-| MarkupSafe | 2.1.5 | BSD-3-Clause | Jinja2 / Flask |
-| Werkzeug | 3.1.4 | BSD-3-Clause | Flask |
-| six | 1.17.0 | MIT | pystray |
+| Package | Version | License | Purpose | License files |
+| --- | ---: | --- | --- | --- |
+| pywin32 | 311 | Python Software Foundation License | Windows foreground window, process, registry, and icon APIs | `docs/third-party-licenses/pywin32-311/license.txt`<br>`docs/third-party-licenses/pywin32-311/license-2.txt`<br>`docs/third-party-licenses/pywin32-311/license-3.txt`<br>`docs/third-party-licenses/pywin32-311/License-4.txt` |
+| psutil | 7.2.2 | BSD-3-Clause | Process inspection and executable path detection | `docs/third-party-licenses/psutil-7.2.2/LICENSE` |
+| Flask | 3.1.3 | BSD-3-Clause | Local web dashboard and API server | `docs/third-party-licenses/Flask-3.1.3/LICENSE.txt` |
+| pystray | 0.19.5 | LGPL-3.0-or-later | Windows system tray integration | `docs/third-party-licenses/pystray-0.19.5/COPYING`<br>`docs/third-party-licenses/pystray-0.19.5/COPYING.LGPL` |
+| pillow | 12.2.0 | MIT-CMU | Image and icon handling | `docs/third-party-licenses/pillow-12.2.0/LICENSE` |
 
-## 发布说明
+## Transitive Runtime Dependencies
 
-- 如果以源码形式发布本项目，请将本说明与 `requirements.txt` 一同保留。
-- 如果发布打包后的可执行文件，请同时包含已安装 Python 发行包中的许可证文件，尤其是：
-  - `pystray-*.dist-info/COPYING`
-  - `pystray-*.dist-info/COPYING.LGPL`
-  - `psutil-*.dist-info/LICENSE`
-  - `flask-*.dist-info/LICENSE.rst`
-  - `pillow-*.dist-info/LICENSE`
-  - 以及 Flask 运行时依赖对应的许可证文件。
-- `pystray` 使用 LGPL-3.0 许可证。打包二进制文件时，请确保用户能够按该许可证要求替换或重新链接 LGPL 覆盖的组件。
-- 从本机已安装应用中提取的应用图标仅在运行时显示，不会作为第三方素材打包进本仓库。
+| Package | Version | License | Required by / purpose | License files |
+| --- | ---: | --- | --- | --- |
+| blinker | 1.9.0 | MIT | Flask runtime dependency | `docs/third-party-licenses/blinker-1.9.0/LICENSE.txt` |
+| click | 8.4.1 | BSD-3-Clause | Flask command/runtime dependency | `docs/third-party-licenses/click-8.4.1/LICENSE.txt` |
+| colorama | 0.4.6 | BSD-3-Clause | Click Windows console dependency | `docs/third-party-licenses/colorama-0.4.6/LICENSE.txt` |
+| itsdangerous | 2.2.0 | BSD-3-Clause | Flask runtime dependency | `docs/third-party-licenses/itsdangerous-2.2.0/LICENSE.txt` |
+| Jinja2 | 3.1.6 | BSD-3-Clause | Flask template engine | `docs/third-party-licenses/Jinja2-3.1.6/LICENSE.txt` |
+| MarkupSafe | 3.0.3 | BSD-3-Clause | Jinja2/Flask escaping support | `docs/third-party-licenses/MarkupSafe-3.0.3/LICENSE.txt` |
+| Werkzeug | 3.1.8 | BSD-3-Clause | Flask WSGI/runtime dependency | `docs/third-party-licenses/Werkzeug-3.1.8/LICENSE.txt`<br>`docs/third-party-licenses/Werkzeug-3.1.8/ICON_LICENSE.md` |
+| six | 1.17.0 | MIT | pystray compatibility dependency | `docs/third-party-licenses/six-1.17.0/LICENSE` |
 
-本文件仅用于整理第三方许可证说明，不构成法律意见。
+## Release Packaging Notes
+
+- Source releases should include this file, the project `LICENSE`, `src/requirements.txt`, and `docs/third-party-licenses/`.
+- Binary releases should include `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt`, and a copy of `docs/third-party-licenses/` next to `TimeLens.exe` or inside the release archive.
+- `pystray` is licensed under LGPL-3.0-or-later. When distributing a packaged executable, keep the corresponding license texts and allow users to replace or relink the LGPL-covered component as required by that license.
+- Icons extracted from locally installed applications are displayed at runtime only and are not packaged as third-party artwork in this repository.
+
+This notice is a convenience summary and is not legal advice. The license files in `docs/third-party-licenses/` are the controlling texts where provided by the package distributions.

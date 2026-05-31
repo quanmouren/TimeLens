@@ -1,2 +1,9 @@
-src/data
-*/__pycache__
+src/data/
+src/build/
+src/dist/
+release/
+src/venv/
+src/venv
+.venv/
+*/__pycache__/
+*.pyc
