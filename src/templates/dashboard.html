@@ -77,7 +77,9 @@
             </section>
         </div>
 
-        <section class="section all-section">
+        <section class="section all-section" id="allUsageCard">
+            <div class="all-flip-inner">
+                <div class="all-flip-face all-flip-front">
             <div class="section-heading">
                 <h2 class="section-title">所有使用</h2>
                 <p class="updated" id="allUsageDate">今天</p>
@@ -85,6 +87,17 @@
             <article class="usage-list all-usage-list" id="allUsageList">
                 <div class="empty-state">暂无数据，开始使用电脑后将自动记录</div>
             </article>
+                </div>
+                <div class="all-flip-face all-flip-back">
+                    <div class="section-heading">
+                        <h2 class="section-title">每小时</h2>
+                        <p class="updated" id="hourlyUsageDate">今天</p>
+                    </div>
+                    <article class="hourly-icon-list" id="hourlyIconList">
+                        <div class="empty-state">暂无小时记录</div>
+                    </article>
+                </div>
+            </div>
         </section>
     </main>
 
@@ -99,9 +112,17 @@
         let isLoading = false;
         let isRefreshing = false;
         let lastKnownToday = todayStr();
+        let lastAutoRefreshAt = 0;
         const iconUrlCache = new Map();
         const iconWarmCache = new Set();
+        const failedIconCache = new Set();
+        let hourlyRequestKey = '';
+        let hourlyLastFetchedAt = 0;
+        let hourlyFetchPromise = null;
         const AUTO_REFRESH_MS = 1000;
+        const AGGREGATE_AUTO_REFRESH_MS = 30000;
+        const HOURLY_DAILY_REFRESH_MS = 5000;
+        const HOURLY_PERIOD_REFRESH_MS = 60000;
 
         const COLORS = ['#2f8dfb', '#5ac8d8', '#ff9f43', '#5f6368'];
         function formatDuration(seconds) {
@@ -228,7 +249,51 @@
         async function autoRefreshData() {
             syncTodayBoundary();
             if (!viewIncludesToday() || document.hidden || isRefreshing) return;
+            const now = Date.now();
+            if (currentView !== 'daily' && now - lastAutoRefreshAt < AGGREGATE_AUTO_REFRESH_MS) return;
+            lastAutoRefreshAt = now;
             await loadData(true);
+        }
+
+        function hourlyKey() {
+            return `${currentView}|${currentDate}`;
+        }
+
+        function isHourlyPanelVisible() {
+            return isWideHourlyLayout() || document.getElementById('allUsageCard').classList.contains('flipped');
+        }
+
+        async function loadHourlyData({ force = false } = {}) {
+            const key = hourlyKey();
+            const now = Date.now();
+            const refreshMs = currentView === 'daily' ? HOURLY_DAILY_REFRESH_MS : HOURLY_PERIOD_REFRESH_MS;
+            if (!force && key === hourlyRequestKey && now - hourlyLastFetchedAt < refreshMs) {
+                return hourlyHours;
+            }
+            if (hourlyFetchPromise) return hourlyFetchPromise;
+
+            const requestKey = key;
+            const requestView = currentView;
+            const requestDate = currentDate;
+            hourlyFetchPromise = fetch(`/api/hourly?view=${requestView}&date=${requestDate}`)
+                .then(res => res.json())
+                .then(hourly => {
+                    if (requestKey !== hourlyKey()) return hourlyHours;
+                    hourlyHours = hourly.hours || [];
+                    hourlyRequestKey = requestKey;
+                    hourlyLastFetchedAt = Date.now();
+                    return hourlyHours;
+                })
+                .finally(() => {
+                    hourlyFetchPromise = null;
+                });
+            return hourlyFetchPromise;
+        }
+
+        async function refreshHourlyPanel({ force = false } = {}) {
+            await loadHourlyData({ force });
+            renderHourlyIconList(hourlyHours);
+            updateAllUsageFlipHeight();
         }
 
         async function loadData(silent = false) {
@@ -236,18 +301,24 @@
             isRefreshing = true;
             if (!silent) showLoading();
             try {
-                const [periodRes, hourlyRes, trendRes] = await Promise.all([
+                const [periodRes, trendRes] = await Promise.all([
                     fetch(`/api/period?view=${currentView}&date=${currentDate}`),
-                    fetch(`/api/hourly?date=${currentDate}`),
                     fetch(`/api/period?view=weekly&date=${currentDate}`),
                 ]);
                 const period = await periodRes.json();
-                const hourly = await hourlyRes.json();
                 const trend = await trendRes.json();
+                const needsHourly = currentView === 'daily' || isHourlyPanelVisible();
+                let hourlyUpdated = false;
+                if (needsHourly) {
+                    const previousHourlyKey = hourlyRequestKey;
+                    const previousHourlyFetchedAt = hourlyLastFetchedAt;
+                    await loadHourlyData({ force: !silent && hourlyKey() !== hourlyRequestKey });
+                    hourlyUpdated = previousHourlyKey !== hourlyRequestKey
+                        || previousHourlyFetchedAt !== hourlyLastFetchedAt;
+                }
 
                 currentApps = period.apps || [];
                 allUsageApps = period.apps || [];
-                hourlyHours = hourly.hours || [];
                 trendBars = currentView === 'daily' ? (trend.bars || []) : (period.bars || []);
 
                 document.getElementById('totalTime').textContent = formatDuration(period.total_seconds);
@@ -257,13 +328,19 @@
                 })}`;
 
                 renderSummary(currentApps);
-                warmIcons([...currentApps, ...allUsageApps]);
+                warmIcons([
+                    ...currentApps,
+                    ...allUsageApps,
+                ]);
                 renderTrendBars(trendBars, currentView);
                 document.getElementById('hourlyBars').style.display = currentView === 'daily' ? 'block' : 'none';
-                if (currentView === 'daily') renderHourlyBars(hourlyHours);
+                if (currentView === 'daily' && (!silent || hourlyUpdated)) renderHourlyBars(hourlyHours);
                 renderUsageList(currentApps, period.total_seconds || 1);
                 document.getElementById('allUsageDate').textContent = periodLabel(period);
+                document.getElementById('hourlyUsageDate').textContent = periodLabel(period);
                 renderAllUsageList(allUsageApps, period.total_seconds || 1);
+                if (isHourlyPanelVisible() && (!silent || hourlyUpdated)) renderHourlyIconList(hourlyHours);
+                updateAllUsageFlipHeight();
             } catch (e) {
                 console.error(e);
                 if (!silent) showToast('数据加载失败，请稍后重试');
@@ -281,7 +358,7 @@
             };
 
             apps.forEach(app => {
-                totals[TimeLensCategories.getAppCategory(app)] += app.total_seconds || 0;
+                totals[app.category || TimeLensCategories.getAppCategory(app)] += app.total_seconds || 0;
             });
 
             [
@@ -361,16 +438,20 @@
             hours.forEach((hour, i) => {
                 const height = Math.max(hour.total_seconds ? 3 : 0, (hour.total_seconds / max) * (h - 48));
                 const x = gap * i + (gap - barW) / 2;
-                const y = h - 30 - height;
-                const c1 = height * .55;
-                const c2 = height * .28;
-                const c3 = height - c1 - c2;
-                ctx.fillStyle = COLORS[0];
-                ctx.fillRect(x, y + c2 + c3, barW, c1);
-                ctx.fillStyle = COLORS[1];
-                ctx.fillRect(x, y + c3, barW, c2);
-                ctx.fillStyle = COLORS[2];
-                ctx.fillRect(x, y, barW, c3);
+                let y = h - 30;
+                const categories = hour.categories || {};
+                [
+                    ['productivity', COLORS[0]],
+                    ['common', COLORS[1]],
+                    ['other', COLORS[2]],
+                ].forEach(([category, color]) => {
+                    const seconds = categories[category] || 0;
+                    if (!seconds || !hour.total_seconds) return;
+                    const segmentHeight = height * (seconds / hour.total_seconds);
+                    y -= segmentHeight;
+                    ctx.fillStyle = color;
+                    ctx.fillRect(x, y, barW, segmentHeight);
+                });
             });
 
             ctx.fillStyle = 'rgba(60, 60, 67, .56)';
@@ -398,6 +479,78 @@
                 totalSeconds,
                 emptyText: '今天暂无使用记录',
                 showChevron: false,
+            });
+        }
+
+        function renderHourlyIconList(hours) {
+            const list = document.getElementById('hourlyIconList');
+            if (!hours.length) {
+                list.innerHTML = '<div class="empty-state">暂无小时记录</div>';
+                return;
+            }
+
+            const listWidth = list.clientWidth || document.getElementById('allUsageCard').clientWidth || 0;
+            const rowWidth = Math.max(listWidth - 66, 0);
+            const iconSlot = 36;
+            const moreSlot = 44;
+            const maxIcons = Math.max(1, Math.floor((rowWidth - moreSlot) / iconSlot));
+            const activeHours = Array.from({ length: 24 }, (_, hour) => {
+                return hours.find(item => item.hour === hour) || { hour, apps: [], total_seconds: 0 };
+            });
+
+            list.innerHTML = '';
+            activeHours.forEach(hour => {
+                const row = document.createElement('div');
+                row.className = 'hourly-icon-row';
+
+                const label = document.createElement('div');
+                label.className = 'hourly-icon-hour';
+                label.textContent = `${String(hour.hour).padStart(2, '0')}:00`;
+
+                const apps = document.createElement('div');
+                apps.className = 'hourly-icon-apps';
+
+                const sortedApps = (hour.apps || [])
+                    .slice()
+                    .sort((a, b) => (b.total_seconds || 0) - (a.total_seconds || 0));
+                const visibleApps = sortedApps.slice(0, maxIcons);
+                const hiddenCount = sortedApps.length - visibleApps.length;
+
+                visibleApps
+                    .forEach(app => {
+                        const icon = document.createElement('div');
+                        icon.className = 'hourly-app-icon';
+                        icon.title = `${app.app_name || ''} ${formatDuration(app.total_seconds || 0)}`.trim();
+
+                        const img = document.createElement('img');
+                        img.loading = 'eager';
+                        img.decoding = 'async';
+                        img.alt = '';
+                        const iconUrl = getIconUrl(app);
+                        img.onerror = () => {
+                            failedIconCache.add(iconUrl);
+                            img.remove();
+                        };
+
+                        const initials = document.createElement('span');
+                        initials.textContent = (app.app_name || '?').trim().slice(0, 1).toUpperCase();
+                        if (!failedIconCache.has(iconUrl)) {
+                            img.src = iconUrl;
+                            icon.appendChild(img);
+                        }
+                        icon.appendChild(initials);
+                        apps.appendChild(icon);
+                    });
+                if (hiddenCount > 0) {
+                    const more = document.createElement('div');
+                    more.className = 'hourly-more-count';
+                    more.textContent = `+${hiddenCount}`;
+                    more.title = `${hiddenCount} 个应用未显示`;
+                    apps.appendChild(more);
+                }
+
+                row.append(label, apps);
+                list.appendChild(row);
             });
         }
 
@@ -453,12 +606,19 @@
             const img = document.createElement('img');
             img.loading = 'eager';
             img.decoding = 'async';
-            img.src = getIconUrl(app);
             img.alt = '';
-            img.onerror = () => img.remove();
+            const iconUrl = getIconUrl(app);
+            img.onerror = () => {
+                failedIconCache.add(iconUrl);
+                img.remove();
+            };
             const initials = document.createElement('span');
             initials.textContent = (app.app_name || '?').trim().slice(0, 1).toUpperCase();
-            icon.append(img, initials);
+            if (!failedIconCache.has(iconUrl)) {
+                img.src = iconUrl;
+                icon.appendChild(img);
+            }
+            icon.appendChild(initials);
 
             const main = document.createElement('div');
             main.className = 'usage-main';
@@ -504,16 +664,52 @@
             apps.forEach(app => {
                 const processName = app.process_name || `${app.app_name}.exe`;
                 const key = `${app.app_name || ''}|${processName}|${app.exe_path || ''}`;
-                if (iconWarmCache.has(key)) return;
+                const iconUrl = getIconUrl(app);
+                if (iconWarmCache.has(key) || failedIconCache.has(iconUrl)) return;
                 iconWarmCache.add(key);
                 const img = new Image();
-                img.src = getIconUrl(app);
+                img.onerror = () => failedIconCache.add(iconUrl);
+                img.src = iconUrl;
             });
+        }
+
+        function isWideHourlyLayout() {
+            return window.matchMedia('(min-width: 1790px)').matches;
+        }
+
+        function updateAllUsageFlipHeight() {
+            const card = document.getElementById('allUsageCard');
+            const inner = card.querySelector('.all-flip-inner');
+            if (isWideHourlyLayout()) {
+                card.classList.remove('flipped');
+                inner.style.height = '';
+                return;
+            }
+            const activeFace = card.classList.contains('flipped')
+                ? card.querySelector('.all-flip-back')
+                : card.querySelector('.all-flip-front');
+            inner.style.height = `${activeFace.scrollHeight}px`;
         }
 
         window.addEventListener('resize', () => {
             renderTrendBars(trendBars, currentView);
             if (currentView === 'daily') renderHourlyBars(hourlyHours);
+            if (isHourlyPanelVisible()) {
+                refreshHourlyPanel();
+            }
+            updateAllUsageFlipHeight();
+        });
+
+        document.getElementById('allUsageCard').addEventListener('contextmenu', event => {
+            event.preventDefault();
+            if (isWideHourlyLayout()) return;
+            const card = document.getElementById('allUsageCard');
+            card.classList.toggle('flipped');
+            if (card.classList.contains('flipped')) {
+                refreshHourlyPanel({ force: hourlyKey() !== hourlyRequestKey });
+            } else {
+                requestAnimationFrame(updateAllUsageFlipHeight);
+            }
         });
 
         (function init() {

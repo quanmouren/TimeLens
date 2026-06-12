@@ -14,7 +14,7 @@ from PIL import Image
 from database import (
     init_db,
     query_daily_summary,
-    query_hourly_distribution,
+    query_hourly_app_distribution,
     query_weekly_summary,
     query_date_range,
     query_app_summary_between,
@@ -36,6 +36,33 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 _ICON_CACHE: dict[str, bytes] = {}
 _EXE_PATH_CACHE: dict[str, tuple[str, int] | None] = {}
 _ICON_SIZE = 32
+_CATEGORY_RULES = (
+    (
+        "productivity",
+        (
+            "codex", "trae", "code", "vscode", "visual studio", "cursor",
+            "pycharm", "idea", "webstorm", "terminal", "powershell", "cmd",
+            "windows terminal", "photoshop", "illustrator", "figma",
+            "word", "excel", "powerpoint", "wps", "onenote", "notepad",
+            "obsidian", "typora", "notion",
+        ),
+    ),
+    (
+        "common",
+        (
+            "msedge", "edge", "chrome", "firefox", "safari", "wechat",
+            "weixin", "qq", "telegram", "discord", "explorer", "settings",
+            "photos", "snippingtool", "taskmgr", "everything",
+        ),
+    ),
+    (
+        "other",
+        (
+            "steam", "epic", "bilibili", "douyin", "netease", "cloudmusic",
+            "spotify", "potplayer", "vlc", "game", "launcher",
+        ),
+    ),
+)
 
 
 class _SHFILEINFOW(ctypes.Structure):
@@ -312,11 +339,57 @@ def _format_duration(seconds: float) -> str:
         return f"{hours}小时"
     return f"{hours}小时{mins}分钟"
 
+def _get_app_category(app_name: str, process_name: str) -> str:
+    text = f"{app_name or ''} {process_name or ''}".lower()
+    for category, keywords in _CATEGORY_RULES:
+        if any(keyword in text for keyword in keywords):
+            return category
+    return "other"
+
 def _attach_app_meta(summary: list[dict], total_seconds: float) -> list[dict]:
     for item in summary:
         item["percentage"] = round(item["total_seconds"] / total_seconds * 100, 1) if total_seconds > 0 else 0
         item["formatted"] = _format_duration(item["total_seconds"])
+        item["category"] = _get_app_category(item.get("app_name", ""), item.get("process_name", ""))
     return summary
+
+def _attach_hourly_categories(hours: list[dict]) -> list[dict]:
+    for hour in hours:
+        categories = {
+            "productivity": 0,
+            "common": 0,
+            "other": 0,
+        }
+        for item in hour.get("apps", []):
+            category = _get_app_category(item.get("app_name", ""), item.get("process_name", ""))
+            item["category"] = category
+            categories[category] += item.get("total_seconds", 0) or 0
+        hour["categories"] = categories
+    return hours
+
+def _period_date_range(view: str, date_str: str) -> tuple[str | None, str | None]:
+    selected = datetime.strptime(date_str, "%Y-%m-%d")
+    today = datetime.now()
+
+    if view == "weekly":
+        start = selected - timedelta(days=6)
+        end = selected
+    elif view == "monthly":
+        last_day = monthrange(selected.year, selected.month)[1]
+        start = selected.replace(day=1)
+        end = selected.replace(day=last_day)
+    elif view == "yearly":
+        start = datetime(selected.year, 1, 1)
+        end = datetime(selected.year, 12, 31)
+    elif view == "total":
+        date_range = query_date_range()
+        return date_range if date_range else (None, None)
+    else:
+        start = end = selected
+
+    if end.date() > today.date():
+        end = today
+    return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
 def _period_payload(view: str, date_str: str) -> dict:
     selected = datetime.strptime(date_str, "%Y-%m-%d")
@@ -414,9 +487,16 @@ def api_daily():
 @app.route("/api/hourly")
 def api_hourly():
     date_str = _validate_date(request.args.get("date", ""))
-    distribution = query_hourly_distribution(date_str)
+    view = request.args.get("view", "daily")
+    if view not in {"daily", "weekly", "monthly", "yearly", "total"}:
+        view = "daily"
+    start_date, end_date = _period_date_range(view, date_str)
+    distribution = _attach_hourly_categories(query_hourly_app_distribution(start_date, end_date))
     return jsonify({
         "date": date_str,
+        "view": view,
+        "start_date": start_date,
+        "end_date": end_date,
         "hours": distribution,
     })
 

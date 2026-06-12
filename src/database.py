@@ -221,6 +221,84 @@ def query_hourly_distribution(date_str: str) -> list[dict]:
     hour_map = {r["hour"]: r["total_seconds"] for r in rows}
     return [{"hour": h, "total_seconds": hour_map.get(h, 0)} for h in range(24)]
 
+def query_hourly_app_distribution(start_date: str | None = None, end_date: str | None = None) -> list[dict]:
+    period_start = datetime.fromisoformat(f"{start_date}T00:00:00") if start_date else None
+    period_end = datetime.fromisoformat(f"{end_date}T00:00:00") + timedelta(days=1) if end_date else None
+    if period_start and not period_end:
+        period_end = period_start + timedelta(days=1)
+
+    with get_connection() as conn:
+        params = []
+        where = []
+        if period_end:
+            where.append("start_time < ?")
+            params.append(period_end.isoformat())
+        if period_start:
+            where.append("end_time > ?")
+            params.append(period_start.isoformat())
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        rows = conn.execute("""
+            SELECT app_name,
+                   process_name,
+                   exe_path,
+                   start_time,
+                   end_time
+            FROM app_usage
+            {where_sql}
+        """.format(where_sql=where_sql), params).fetchall()
+
+    hours = [
+        {"hour": h, "total_seconds": 0, "apps": []}
+        for h in range(24)
+    ]
+    app_totals: list[dict[str, float | str]] = [
+        {}
+        for _ in range(24)
+    ]
+
+    for row in rows:
+        try:
+            start = datetime.fromisoformat(row["start_time"])
+            end = datetime.fromisoformat(row["end_time"])
+        except ValueError:
+            continue
+
+        if period_start:
+            start = max(start, period_start)
+        if period_end:
+            end = min(end, period_end)
+        if end <= start:
+            continue
+
+        cursor = start
+        while cursor < end:
+            next_hour = (cursor.replace(minute=0, second=0, microsecond=0)
+                         + timedelta(hours=1))
+            segment_end = min(end, next_hour)
+            seconds = (segment_end - cursor).total_seconds()
+            hour = cursor.hour
+            key = f"{row['app_name']}|{row['process_name']}|{row['exe_path']}"
+
+            hour_bucket = hours[hour]
+            hour_bucket["total_seconds"] += seconds
+            if key not in app_totals[hour]:
+                app_totals[hour][key] = {
+                    "app_name": row["app_name"],
+                    "process_name": row["process_name"],
+                    "exe_path": row["exe_path"],
+                    "total_seconds": 0,
+                }
+            app_totals[hour][key]["total_seconds"] += seconds
+            cursor = segment_end
+
+    for hour, apps in enumerate(app_totals):
+        hours[hour]["apps"] = sorted(
+            apps.values(),
+            key=lambda app: app["total_seconds"],
+            reverse=True,
+        )
+    return hours
+
 def query_weekly_summary() -> list[dict]:
     today = datetime.now().strftime("%Y-%m-%d")
     week_ago = (datetime.now() - timedelta(days=6)).strftime("%Y-%m-%d")
