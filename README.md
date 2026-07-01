@@ -93,3 +93,11 @@ src
 ## 隐私说明
 
 TimeLens 只在本机记录应用名称、进程名称、窗口标题和使用时间，用于生成本地统计视图。项目本身不包含网络上传逻辑。
+
+---
+
+## ⭐ Star 历史趋势
+
+<div align="center">
+  <img src="https://api.star-history.com/svg?repos=quanmouren/MouseEngine&type=Date" width="100%">
+</div>
