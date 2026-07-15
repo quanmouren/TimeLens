@@ -60,6 +60,154 @@ def init_db():
             conn.execute(
                 "ALTER TABLE app_usage ADD COLUMN exe_path TEXT NOT NULL DEFAULT ''"
             )
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_app_usage_process_start
+            ON app_usage(LOWER(process_name), start_time, end_time)
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS app_usage_summary (
+                process_key    TEXT PRIMARY KEY,
+                app_name       TEXT NOT NULL,
+                process_name   TEXT NOT NULL,
+                exe_path       TEXT NOT NULL DEFAULT '',
+                last_used_at   TEXT NOT NULL,
+                total_seconds  REAL NOT NULL DEFAULT 0,
+                session_count  INTEGER NOT NULL DEFAULT 0,
+                latest_usage_id INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_app_usage_summary_recent
+            ON app_usage_summary(last_used_at DESC)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_app_usage_summary_total
+            ON app_usage_summary(total_seconds DESC, last_used_at DESC)
+        """)
+        summary_count = conn.execute("SELECT COUNT(*) FROM app_usage_summary").fetchone()[0]
+        if summary_count == 0:
+            conn.execute("""
+                INSERT INTO app_usage_summary(
+                    process_key, app_name, process_name, exe_path, last_used_at,
+                    total_seconds, session_count, latest_usage_id
+                )
+                WITH summaries AS (
+                    SELECT LOWER(process_name) AS process_key,
+                           MAX(id) AS latest_usage_id,
+                           MAX(end_time) AS last_used_at,
+                           SUM(duration_seconds) AS total_seconds,
+                           COUNT(*) AS session_count
+                    FROM app_usage
+                    GROUP BY LOWER(process_name)
+                )
+                SELECT summaries.process_key, latest.app_name, latest.process_name,
+                       latest.exe_path, summaries.last_used_at, summaries.total_seconds,
+                       summaries.session_count, summaries.latest_usage_id
+                FROM summaries
+                JOIN app_usage AS latest ON latest.id = summaries.latest_usage_id
+            """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS key_usage (
+                date        TEXT NOT NULL,
+                hour        INTEGER NOT NULL,
+                key_name    TEXT NOT NULL,
+                press_count INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (date, hour, key_name)
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_key_usage_date
+            ON key_usage(date)
+        """)
+
+
+def increment_key_usage(key_name: str, pressed_at: datetime | None = None):
+    """Store only an aggregate key count; typed text and key order are never saved."""
+    pressed_at = pressed_at or datetime.now()
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO key_usage (date, hour, key_name, press_count)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(date, hour, key_name)
+            DO UPDATE SET press_count = press_count + 1
+        """, (
+            pressed_at.strftime("%Y-%m-%d"),
+            pressed_at.hour,
+            key_name,
+        ))
+
+
+def increment_key_usage_batch(rows: list[tuple[str, int, str, int]]):
+    if not rows:
+        return
+    with get_connection() as conn:
+        conn.executemany("""
+            INSERT INTO key_usage (date, hour, key_name, press_count)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(date, hour, key_name)
+            DO UPDATE SET press_count = press_count + excluded.press_count
+        """, rows)
+
+
+def query_key_usage_between(start_date: str | None, end_date: str | None) -> dict:
+    with get_connection() as conn:
+        params = []
+        where = ""
+        if start_date and end_date:
+            where = "WHERE date BETWEEN ? AND ?"
+            params = [start_date, end_date]
+
+        key_rows = conn.execute(f"""
+            SELECT key_name, SUM(press_count) AS press_count
+            FROM key_usage
+            {where}
+            GROUP BY key_name
+            ORDER BY press_count DESC, key_name ASC
+        """, params).fetchall()
+        hour_rows = conn.execute(f"""
+            SELECT hour, SUM(press_count) AS press_count
+            FROM key_usage
+            {where}
+            GROUP BY hour
+            ORDER BY hour
+        """, params).fetchall()
+
+    hour_map = {row["hour"]: row["press_count"] for row in hour_rows}
+    keys = [dict(row) for row in key_rows]
+    return {
+        "total_presses": sum(item["press_count"] for item in keys),
+        "active_keys": len(keys),
+        "keys": keys,
+        "hours": [
+            {"hour": hour, "press_count": hour_map.get(hour, 0)}
+            for hour in range(24)
+        ],
+    }
+
+
+def query_key_daily_totals_between(start_date: str, end_date: str) -> list[dict]:
+    start = datetime.strptime(start_date, "%Y-%m-%d")
+    end = datetime.strptime(end_date, "%Y-%m-%d")
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT date, SUM(press_count) AS press_count
+            FROM key_usage
+            WHERE date BETWEEN ? AND ?
+            GROUP BY date
+            ORDER BY date
+        """, (start_date, end_date)).fetchall()
+
+    date_map = {row["date"]: row["press_count"] for row in rows}
+    return [
+        {
+            "date": (start + timedelta(days=offset)).strftime("%Y-%m-%d"),
+            "press_count": date_map.get(
+                (start + timedelta(days=offset)).strftime("%Y-%m-%d"),
+                0,
+            ),
+        }
+        for offset in range((end - start).days + 1)
+    ]
 
 def insert_usage(app_name: str, process_name: str, exe_path: str, window_title: str,
                  start_time: datetime, end_time: datetime):
@@ -67,7 +215,7 @@ def insert_usage(app_name: str, process_name: str, exe_path: str, window_title: 
     if duration < 1:
         return
     with get_connection() as conn:
-        conn.execute("""
+        cursor = conn.execute("""
             INSERT INTO app_usage (app_name, process_name, exe_path, window_title,
                                    start_time, end_time, duration_seconds, date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -80,6 +228,29 @@ def insert_usage(app_name: str, process_name: str, exe_path: str, window_title: 
             end_time.isoformat(),
             duration,
             start_time.strftime("%Y-%m-%d"),
+        ))
+        usage_id = int(cursor.lastrowid)
+        process_key = process_name.casefold()
+        end_text = end_time.isoformat()
+        conn.execute("""
+            INSERT INTO app_usage_summary(
+                process_key, app_name, process_name, exe_path, last_used_at,
+                total_seconds, session_count, latest_usage_id
+            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT(process_key) DO UPDATE SET
+                total_seconds = app_usage_summary.total_seconds + excluded.total_seconds,
+                session_count = app_usage_summary.session_count + 1,
+                app_name = CASE WHEN excluded.last_used_at >= app_usage_summary.last_used_at
+                                THEN excluded.app_name ELSE app_usage_summary.app_name END,
+                process_name = CASE WHEN excluded.last_used_at >= app_usage_summary.last_used_at
+                                    THEN excluded.process_name ELSE app_usage_summary.process_name END,
+                exe_path = CASE WHEN excluded.last_used_at >= app_usage_summary.last_used_at
+                                THEN excluded.exe_path ELSE app_usage_summary.exe_path END,
+                last_used_at = MAX(app_usage_summary.last_used_at, excluded.last_used_at),
+                latest_usage_id = MAX(app_usage_summary.latest_usage_id, excluded.latest_usage_id)
+        """, (
+            process_key, app_name, process_name, exe_path, end_text,
+            duration, usage_id,
         ))
 
 def query_daily_summary(date_str: str) -> list[dict]:
@@ -153,6 +324,41 @@ def query_app_summary_between(start_date: str, end_date: str) -> list[dict]:
         d["exe_path"] = exe_map.get(d["app_name"], "")
         result.append(d)
     return result
+
+
+def query_keytrace_app_catalog(limit: int = 24) -> dict[str, list[dict]]:
+    """Return app identities from the incrementally maintained summary table."""
+    with get_connection() as conn:
+        recent = conn.execute("""
+            SELECT app_name, process_name, exe_path, last_used_at,
+                   total_seconds, session_count
+            FROM app_usage_summary
+            ORDER BY last_used_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        most_used = conn.execute("""
+            SELECT app_name, process_name, exe_path, last_used_at,
+                   total_seconds, session_count
+            FROM app_usage_summary
+            ORDER BY total_seconds DESC, last_used_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+    return {
+        "recent": [dict(row) for row in recent],
+        "most_used": [dict(row) for row in most_used],
+    }
+
+
+def query_keytrace_app_sessions(process_name: str) -> list[dict]:
+    """Return foreground intervals for one process without exposing window titles."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT app_name, process_name, exe_path, start_time, end_time
+            FROM app_usage
+            WHERE LOWER(process_name) = LOWER(?)
+            ORDER BY start_time, end_time
+        """, (process_name,)).fetchall()
+    return [dict(row) for row in rows]
 
 def query_daily_totals_between(start_date: str, end_date: str) -> list[dict]:
     start = datetime.strptime(start_date, "%Y-%m-%d")

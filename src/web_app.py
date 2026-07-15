@@ -6,7 +6,7 @@ import shutil
 import sys
 import winreg
 from pathlib import Path
-from flask import Flask, render_template, jsonify, request, send_file, make_response
+from flask import Flask, abort, render_template, jsonify, request, send_file, make_response
 from datetime import datetime, timedelta
 from calendar import monthrange
 from PIL import Image
@@ -21,7 +21,12 @@ from database import (
     query_daily_totals_between,
     query_monthly_totals_for_year,
     query_yearly_totals,
+    query_key_usage_between,
+    query_key_daily_totals_between,
+    query_keytrace_app_catalog,
+    query_keytrace_app_sessions,
 )
+from monitor import list_visible_apps
 
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 
@@ -36,6 +41,7 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 _ICON_CACHE: dict[str, bytes] = {}
 _EXE_PATH_CACHE: dict[str, tuple[str, int] | None] = {}
 _ICON_SIZE = 32
+_CURRENT_APP_PROVIDER = lambda: None
 _CATEGORY_RULES = (
     (
         "productivity",
@@ -543,6 +549,162 @@ def api_dates():
         return jsonify({"min_date": result[0], "max_date": result[1]})
     return jsonify({"min_date": None, "max_date": None})
 
-def run_web_server(host="127.0.0.1", port=5000):
+
+@app.route("/api/keyboard")
+def api_keyboard():
+    view = request.args.get("view", "daily")
+    if view not in {"daily", "weekly", "monthly", "yearly", "total"}:
+        view = "daily"
+    date_str = _validate_date(request.args.get("date", ""))
+    start_date, end_date = _period_date_range(view, date_str)
+    result = query_key_usage_between(start_date, end_date)
+    calendar_end = datetime.strptime(date_str, "%Y-%m-%d")
+    if calendar_end.date() > datetime.now().date():
+        calendar_end = datetime.now()
+    calendar_start = calendar_end - timedelta(days=364)
+    result["daily_activity"] = query_key_daily_totals_between(
+        calendar_start.strftime("%Y-%m-%d"),
+        calendar_end.strftime("%Y-%m-%d"),
+    )
+    peak = max(result["hours"], key=lambda item: item["press_count"], default=None)
+    result.update({
+        "date": date_str,
+        "view": view,
+        "start_date": start_date,
+        "end_date": end_date,
+        "peak_hour": peak["hour"] if peak and peak["press_count"] else None,
+    })
+    return jsonify(result)
+
+
+def configure_current_app_provider(provider=None):
+    global _CURRENT_APP_PROVIDER
+    _CURRENT_APP_PROVIDER = provider or (lambda: None)
+
+
+def _current_app_snapshot() -> dict | None:
+    try:
+        return _CURRENT_APP_PROVIDER()
+    except Exception:
+        app.logger.exception("读取当前应用会话失败")
+        return None
+
+
+def _timestamp_ns(value) -> int:
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone()
+    return int(parsed.timestamp() * 1_000_000_000)
+
+
+def _merge_sessions(rows: list[dict]) -> list[dict[str, int]]:
+    intervals = sorted(
+        (
+            _timestamp_ns(row["start_time"]),
+            _timestamp_ns(row["end_time"]),
+        )
+        for row in rows
+        if row.get("start_time") and row.get("end_time")
+    )
+    merged: list[list[int]] = []
+    for start_ns, end_ns in intervals:
+        if end_ns <= start_ns:
+            continue
+        if merged and start_ns <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end_ns)
+        else:
+            merged.append([start_ns, end_ns])
+    return [{"start_ts_ns": start, "end_ts_ns": end} for start, end in merged]
+
+
+def _app_identity(item: dict) -> str:
+    return (item.get("process_name") or "").casefold()
+
+
+def _integration_app(item: dict, running: bool = False) -> dict:
+    process_name = item.get("process_name") or ""
+    app_name = item.get("app_name") or (
+        process_name[:-4] if process_name.lower().endswith(".exe") else process_name
+    )
+    return {
+        "app_name": app_name,
+        "process_name": process_name,
+        "exe_path": item.get("exe_path") or "",
+        "last_used_at": item.get("last_used_at"),
+        "total_seconds": round(float(item.get("total_seconds") or 0), 3),
+        "session_count": int(item.get("session_count") or 0),
+        "is_running": running,
+    }
+
+
+@app.route("/api/integrations/keytrace/apps")
+def api_keytrace_apps():
+    try:
+        limit = max(1, min(100, int(request.args.get("limit", "24"))))
+    except ValueError:
+        abort(400, description="limit 必须是整数")
+
+    catalog = query_keytrace_app_catalog(limit=100)
+    recent = [_integration_app(item) for item in catalog["recent"]]
+    most_used = [_integration_app(item) for item in catalog["most_used"]]
+    historical = {_app_identity(item): item for item in recent + most_used}
+
+    running = []
+    for visible in list_visible_apps():
+        identity = _app_identity(visible)
+        canonical = historical.get(identity, visible)
+        running.append(_integration_app({**canonical, "exe_path": visible.get("exe_path") or canonical.get("exe_path", "")}, True))
+    running.sort(key=lambda item: item["app_name"].casefold())
+    running_keys = {_app_identity(item) for item in running}
+    for group in (recent, most_used):
+        for item in group:
+            item["is_running"] = _app_identity(item) in running_keys
+
+    current = _current_app_snapshot()
+    if current:
+        current_key = _app_identity(current)
+        historical_current = historical.get(current_key, {})
+        current_item = _integration_app({
+            **historical_current,
+            **current,
+            "last_used_at": current["end_time"].isoformat(),
+        }, _app_identity(current) in running_keys)
+        recent = [item for item in recent if _app_identity(item) != current_key]
+        recent.insert(0, current_item)
+
+    return jsonify({
+        "generated_at": datetime.now().astimezone().isoformat(),
+        "recent": recent[:limit],
+        "most_used": most_used[:limit],
+        "running": running[:limit],
+    })
+
+
+@app.route("/api/integrations/keytrace/sessions")
+def api_keytrace_sessions():
+    process_name = request.args.get("process_name", "").strip()
+    if not process_name or len(process_name) > 260:
+        abort(400, description="process_name 不能为空且不能超过 260 个字符")
+
+    rows = query_keytrace_app_sessions(process_name)
+    current = _current_app_snapshot()
+    if current and _app_identity(current) == process_name.casefold():
+        rows.append(current)
+
+    visible = next(
+        (item for item in list_visible_apps() if _app_identity(item) == process_name.casefold()),
+        None,
+    )
+    if not rows and not visible:
+        abort(404, description="未找到该应用")
+
+    metadata = rows[-1] if rows else visible
+    return jsonify({
+        "app": _integration_app(metadata, visible is not None),
+        "sessions": _merge_sessions(rows),
+    })
+
+def run_web_server(host="127.0.0.1", port=5000, app_monitor=None):
+    configure_current_app_provider(app_monitor.snapshot_current if app_monitor else None)
     init_db()
     app.run(host=host, port=port, debug=False, use_reloader=False)

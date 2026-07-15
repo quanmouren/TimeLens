@@ -17,6 +17,16 @@ TimeLens 是一个本地运行的 Windows 应用使用时间统计工具。它�
 - 自动提取并缓存应用图标
 - 支持 30 分钟无输入后的挂机判断
 - 支持按规则区分效率、常用和其他应用类别
+- 本地统计按键次数，并通过键盘热力图、小时趋势和常用键位查看使用情况
+
+## KeyTrace 本机接口
+
+TimeLens 在 `127.0.0.1:<config.json 中的 port>` 提供仅限本机访问的 KeyTrace 集成接口（默认端口为 `6001`）：
+
+- `GET /api/integrations/keytrace/apps`：返回最近使用、最多使用和拥有可见窗口的正在运行应用。
+- `GET /api/integrations/keytrace/sessions?process_name=...`：返回指定进程全部历史的合并前台区间，时间使用纳秒时间戳；当前尚未落盘的前台会话也会计入。
+
+接口以不区分大小写的 `process_name` 标识应用，不向 KeyTrace 返回窗口标题。应用图标继续使用现有 `/api/icon/...` 接口。
 
 ## 运行环境
 
@@ -40,6 +50,18 @@ python main.py
 
 - 开始后台记录应用使用时间
 - 在系统托盘显示图标
+
+## 端口配置
+
+编辑程序根目录的 `config.json` 后重启 TimeLens：
+
+```json
+{
+  "port": 6001
+}
+```
+
+`port` 必须是 `1024–65535` 的整数。网页服务、系统托盘“打开 TimeLens”和 KeyTrace 集成接口都会使用该端口。打包程序首次运行时若配置文件不存在，会在 EXE 同级目录自动生成。
 
 ## 数据存储
 
@@ -88,16 +110,8 @@ src
 
 本项目源码使用 MIT License。
 
-第三方依赖的许可证请查看 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+第三方运行时依赖清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，完整许可证正文见 [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)。两份文件由 `src/tools/generate_third_party_licenses.ps1` 使用 `pip-licenses` 从当前 `src/venv` 构建环境生成，不应手工维护。
 
 ## 隐私说明
 
-TimeLens 只在本机记录应用名称、进程名称、窗口标题和使用时间，用于生成本地统计视图。项目本身不包含网络上传逻辑。
-
----
-
-## ⭐ Star 历史趋势
-
-<div align="center">
-  <img src="https://api.star-history.com/svg?repos=quanmouren/MouseEngine&type=Date" width="100%">
-</div>
+TimeLens 只在本机记录应用名称、进程名称、窗口标题、使用时间以及聚合后的键位次数，用于生成本地统计视图。按键跟踪不会保存输入内容或按键顺序，项目本身也不包含网络上传逻辑。

@@ -12,6 +12,7 @@
         <div class="spinner"></div>
     </div>
     <div class="toast" id="toast"></div>
+    <div class="keyboard-float-tooltip" id="keyboardFloatTooltip" role="tooltip"></div>
 
     <main class="desktop-shell">
         <header class="top-bar">
@@ -20,10 +21,11 @@
                 <span>查看日期</span>
                 <input type="date" id="datePicker" onchange="onDateChange()">
             </label>
+            <button class="round-btn" type="button" onclick="changeDate(1)" aria-label="后一天">›</button>
             <button class="pill-btn" type="button" onclick="goToday()">今天</button>
         </header>
 
-        <div class="segmented">
+        <div class="segmented" id="screenSegmented">
             <button class="segment active" data-view="daily" type="button" onclick="switchView('daily')">每天</button>
             <button class="segment" data-view="weekly" type="button" onclick="switchView('weekly')">每周</button>
             <button class="segment" data-view="monthly" type="button" onclick="switchView('monthly')">每月</button>
@@ -31,7 +33,19 @@
             <button class="segment" data-view="total" type="button" onclick="switchView('total')">总计</button>
         </div>
 
-        <div class="dashboard-grid">
+        <div class="segmented keyboard-segmented is-hidden" id="keyboardSegmented">
+            <button class="segment active" data-keyboard-view="total" type="button" onclick="switchKeyboardView('total')">总计</button>
+            <button class="segment" data-keyboard-view="yearly" type="button" onclick="switchKeyboardView('yearly')">每年</button>
+            <button class="segment" data-keyboard-view="monthly" type="button" onclick="switchKeyboardView('monthly')">每月</button>
+            <button class="segment" data-keyboard-view="daily" type="button" onclick="switchKeyboardView('daily')">每天</button>
+        </div>
+
+        <nav class="feature-switcher" aria-label="统计类型">
+            <button class="feature-tab active" data-feature-tab="screen" type="button" onclick="switchFeature('screen')">屏幕时间</button>
+            <button class="feature-tab" data-feature-tab="keyboard" type="button" onclick="switchFeature('keyboard')">按键跟踪</button>
+        </nav>
+
+        <div class="dashboard-grid" data-feature-panel="screen">
             <section class="section screen-section">
                 <div class="section-heading">
                     <h1 class="section-title">屏幕时间</h1>
@@ -77,7 +91,7 @@
             </section>
         </div>
 
-        <section class="section all-section" id="allUsageCard">
+        <section class="section all-section" id="allUsageCard" data-feature-panel="screen">
             <div class="all-flip-inner">
                 <div class="all-flip-face all-flip-front">
             <div class="section-heading">
@@ -99,11 +113,104 @@
                 </div>
             </div>
         </section>
+
+        <section class="keyboard-panel is-hidden" data-feature-panel="keyboard" aria-labelledby="keyboardTitle">
+            <div class="section-heading keyboard-heading">
+                <div>
+                    <h1 class="section-title" id="keyboardTitle">按键跟踪</h1>
+                    <p class="privacy-note">只统计键位次数，不保存输入内容</p>
+                </div>
+                <p class="updated" id="keyboardPeriod">--</p>
+            </div>
+
+            <article class="keyboard-card">
+                <div class="keyboard-card-header">
+                    <div>
+                        <h2>键盘热力图</h2>
+                        <p>颜色越深，使用次数越多</p>
+                    </div>
+                    <div class="heat-legend" aria-label="热力强度">
+                        <span>少</span><i></i><i></i><i></i><i></i><span>多</span>
+                    </div>
+                </div>
+                <div class="keyboard-scroll">
+                    <div class="keyboard-visual" id="keyboardVisual">
+                        <div class="keyboard-zone keyboard-main-zone">
+                            <div class="keyboard-row function-row">
+                                <button class="keyboard-key key-special kw-1" data-key="Esc">Esc</button><span class="key-spacer"></span>
+                                <button class="keyboard-key key-special kw-1" data-key="F1">F1</button><button class="keyboard-key key-special kw-1" data-key="F2">F2</button><button class="keyboard-key key-special kw-1" data-key="F3">F3</button><button class="keyboard-key key-special kw-1" data-key="F4">F4</button><span class="key-spacer"></span>
+                                <button class="keyboard-key key-special kw-1" data-key="F5">F5</button><button class="keyboard-key key-special kw-1" data-key="F6">F6</button><button class="keyboard-key key-special kw-1" data-key="F7">F7</button><button class="keyboard-key key-special kw-1" data-key="F8">F8</button><span class="key-spacer"></span>
+                                <button class="keyboard-key key-special kw-1" data-key="F9">F9</button><button class="keyboard-key key-special kw-1" data-key="F10">F10</button><button class="keyboard-key key-special kw-1" data-key="F11">F11</button><button class="keyboard-key key-special kw-1" data-key="F12">F12</button>
+                            </div>
+                            <div class="keyboard-row">
+                                <button class="keyboard-key kw-1" data-key="`">~</button><button class="keyboard-key kw-1" data-key="1">1</button><button class="keyboard-key kw-1" data-key="2">2</button><button class="keyboard-key kw-1" data-key="3">3</button><button class="keyboard-key kw-1" data-key="4">4</button><button class="keyboard-key kw-1" data-key="5">5</button><button class="keyboard-key kw-1" data-key="6">6</button><button class="keyboard-key kw-1" data-key="7">7</button><button class="keyboard-key kw-1" data-key="8">8</button><button class="keyboard-key kw-1" data-key="9">9</button><button class="keyboard-key kw-1" data-key="0">0</button><button class="keyboard-key kw-1" data-key="-">-</button><button class="keyboard-key kw-1" data-key="=">=</button><button class="keyboard-key key-special kw-2" data-key="Backspace">Backspace</button>
+                            </div>
+                            <div class="keyboard-row">
+                                <button class="keyboard-key key-special kw-1-5" data-key="Tab">Tab</button><button class="keyboard-key kw-1" data-key="Q">Q</button><button class="keyboard-key kw-1" data-key="W">W</button><button class="keyboard-key kw-1" data-key="E">E</button><button class="keyboard-key kw-1" data-key="R">R</button><button class="keyboard-key kw-1" data-key="T">T</button><button class="keyboard-key kw-1" data-key="Y">Y</button><button class="keyboard-key kw-1" data-key="U">U</button><button class="keyboard-key kw-1" data-key="I">I</button><button class="keyboard-key kw-1" data-key="O">O</button><button class="keyboard-key kw-1" data-key="P">P</button><button class="keyboard-key kw-1" data-key="[">[</button><button class="keyboard-key kw-1" data-key="]">]</button><button class="keyboard-key key-special kw-1-5" data-key="\">\</button>
+                            </div>
+                            <div class="keyboard-row">
+                                <button class="keyboard-key key-special kw-1-75" data-key="Caps Lock">Caps Lock</button><button class="keyboard-key kw-1" data-key="A">A</button><button class="keyboard-key kw-1" data-key="S">S</button><button class="keyboard-key kw-1" data-key="D">D</button><button class="keyboard-key kw-1" data-key="F">F</button><button class="keyboard-key kw-1" data-key="G">G</button><button class="keyboard-key kw-1" data-key="H">H</button><button class="keyboard-key kw-1" data-key="J">J</button><button class="keyboard-key kw-1" data-key="K">K</button><button class="keyboard-key kw-1" data-key="L">L</button><button class="keyboard-key kw-1" data-key=";">;</button><button class="keyboard-key kw-1" data-key="'">'</button><button class="keyboard-key key-special kw-2-25" data-key="Enter">Enter</button>
+                            </div>
+                            <div class="keyboard-row">
+                                <button class="keyboard-key key-special kw-2-25" data-key="ShiftLeft">Shift</button><button class="keyboard-key kw-1" data-key="Z">Z</button><button class="keyboard-key kw-1" data-key="X">X</button><button class="keyboard-key kw-1" data-key="C">C</button><button class="keyboard-key kw-1" data-key="V">V</button><button class="keyboard-key kw-1" data-key="B">B</button><button class="keyboard-key kw-1" data-key="N">N</button><button class="keyboard-key kw-1" data-key="M">M</button><button class="keyboard-key kw-1" data-key=",">,</button><button class="keyboard-key kw-1" data-key=".">.</button><button class="keyboard-key kw-1" data-key="/">/</button><button class="keyboard-key key-special kw-2-75" data-key="ShiftRight">Shift</button>
+                            </div>
+                            <div class="keyboard-row">
+                                <button class="keyboard-key key-special kw-1-25" data-key="CtrlLeft">Ctrl</button><button class="keyboard-key key-special kw-1-25" data-key="Win">Win</button><button class="keyboard-key key-special kw-1-25" data-key="Alt">Alt</button><button class="keyboard-key kw-6-25" data-key="Space">Space</button><button class="keyboard-key key-special kw-1-25" data-key="Alt">Alt</button><button class="keyboard-key key-special kw-1-25" data-key="Win">Win</button><button class="keyboard-key key-special kw-1-25" data-key="Menu">Menu</button><button class="keyboard-key key-special kw-1-25" data-key="CtrlRight">Ctrl</button>
+                            </div>
+                        </div>
+
+                        <div class="keyboard-zone keyboard-nav-zone">
+                            <div class="keyboard-row"><button class="keyboard-key key-special kw-1" data-key="PrtSc">PrtSc</button><button class="keyboard-key key-special kw-1" data-key="ScrLk">ScrLk</button><button class="keyboard-key key-special kw-1" data-key="Pause">Pause</button></div>
+                            <div class="keyboard-nav-grid">
+                                <button class="keyboard-key key-special" data-key="Ins">Ins</button><button class="keyboard-key key-special" data-key="Home">Home</button><button class="keyboard-key key-special" data-key="PgUp">PgUp</button>
+                                <button class="keyboard-key key-special" data-key="Del">Del</button><button class="keyboard-key key-special" data-key="End">End</button><button class="keyboard-key key-special" data-key="PgDn">PgDn</button>
+                                <span></span><span></span><span></span><span></span><button class="keyboard-key key-special" data-key="Up">↑</button><span></span>
+                                <button class="keyboard-key key-special" data-key="Left">←</button><button class="keyboard-key key-special" data-key="Down">↓</button><button class="keyboard-key key-special" data-key="Right">→</button>
+                            </div>
+                        </div>
+
+                        <div class="keyboard-zone keyboard-numpad-zone">
+                            <div class="keyboard-row keyboard-placeholder"><span class="keyboard-key kw-1"></span></div>
+                            <div class="keyboard-numpad-grid">
+                                <button class="keyboard-key key-special" data-key="Num">Num</button><button class="keyboard-key key-special" data-key="Num/">/</button><button class="keyboard-key key-special" data-key="Num*">*</button><button class="keyboard-key key-special" data-key="Num-">-</button>
+                                <button class="keyboard-key" data-key="Num7">7</button><button class="keyboard-key" data-key="Num8">8</button><button class="keyboard-key" data-key="Num9">9</button><button class="keyboard-key key-special kh-2" data-key="Num+">+</button>
+                                <button class="keyboard-key" data-key="Num4">4</button><button class="keyboard-key" data-key="Num5">5</button><button class="keyboard-key" data-key="Num6">6</button>
+                                <button class="keyboard-key" data-key="Num1">1</button><button class="keyboard-key" data-key="Num2">2</button><button class="keyboard-key" data-key="Num3">3</button><button class="keyboard-key key-special kh-2" data-key="Enter">Enter</button>
+                                <button class="keyboard-key kw-2-grid" data-key="Num0">0</button><button class="keyboard-key" data-key="Num.">.</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <div class="keyboard-detail-grid">
+                <article class="keyboard-detail-card">
+                    <div class="detail-card-heading"><h2>每小时按键</h2><span id="keyboardHourlyTotal">0 次</span></div>
+                    <canvas id="keyboardHourlyBars" width="720" height="220"></canvas>
+                </article>
+            </div>
+
+            <article class="keyboard-calendar-card">
+                <div class="detail-card-heading">
+                    <div><h2>每日按键频率</h2><p>以每天为单位，展示近一年的按键活跃度</p></div>
+                    <span id="keyboardCalendarPeriod">--</span>
+                </div>
+                <div class="calendar-scroll">
+                    <div class="calendar-heatmap" id="keyboardCalendar" aria-label="每日按键频率图"></div>
+                </div>
+                <div class="calendar-legend" aria-label="每日按键频率图例">
+                    <span>少</span><i></i><i></i><i></i><i></i><i></i><span>多</span>
+                </div>
+            </article>
+        </section>
     </main>
 
     <script src="/static/app-categories.js"></script>
     <script>
+        let currentFeature = 'screen';
         let currentView = 'daily';
+        let screenView = 'daily';
+        let keyboardView = 'total';
         let currentDate = '{{ default_date }}';
         let trendBars = [];
         let hourlyHours = [];
@@ -119,6 +226,10 @@
         let hourlyRequestKey = '';
         let hourlyLastFetchedAt = 0;
         let hourlyFetchPromise = null;
+        let keyboardHours = [];
+        let keyboardKeys = [];
+        let keyboardDailyActivity = [];
+        let keyboardHeatmapFrame = 0;
         const AUTO_REFRESH_MS = 1000;
         const AGGREGATE_AUTO_REFRESH_MS = 30000;
         const HOURLY_DAILY_REFRESH_MS = 5000;
@@ -174,12 +285,41 @@
             setTimeout(() => toast.classList.remove('visible'), 2400);
         }
 
+        function switchFeature(feature) {
+            currentFeature = feature;
+            currentView = feature === 'keyboard' ? keyboardView : screenView;
+            document.querySelectorAll('[data-feature-tab]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.featureTab === feature);
+            });
+            document.querySelectorAll('[data-feature-panel]').forEach(panel => {
+                panel.classList.toggle('is-hidden', panel.dataset.featurePanel !== feature);
+            });
+            document.getElementById('screenSegmented').classList.toggle('is-hidden', feature !== 'screen');
+            document.getElementById('keyboardSegmented').classList.toggle('is-hidden', feature !== 'keyboard');
+            if (feature === 'keyboard') {
+                loadKeyboardData();
+            } else {
+                loadData();
+                requestAnimationFrame(updateAllUsageFlipHeight);
+            }
+        }
+
         function switchView(view) {
+            screenView = view;
             currentView = view;
-            document.querySelectorAll('.segment').forEach(btn => {
+            document.querySelectorAll('#screenSegmented .segment').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.view === view);
             });
             loadData();
+        }
+
+        function switchKeyboardView(view) {
+            keyboardView = view;
+            currentView = view;
+            document.querySelectorAll('#keyboardSegmented .segment').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.keyboardView === view);
+            });
+            loadKeyboardData();
         }
 
         function changeDate(delta) {
@@ -297,6 +437,7 @@
         }
 
         async function loadData(silent = false) {
+            if (currentFeature === 'keyboard') return loadKeyboardData(silent);
             if (isRefreshing) return;
             isRefreshing = true;
             if (!silent) showLoading();
@@ -348,6 +489,237 @@
                 isRefreshing = false;
                 if (!silent) hideLoading();
             }
+        }
+
+        async function loadKeyboardData(silent = false) {
+            if (isRefreshing) {
+                setTimeout(() => {
+                    if (currentFeature === 'keyboard') loadKeyboardData(silent);
+                }, 80);
+                return;
+            }
+            isRefreshing = true;
+            if (!silent) showLoading();
+            try {
+                const response = await fetch(`/api/keyboard?view=${currentView}&date=${currentDate}`);
+                if (!response.ok) throw new Error(`keyboard api ${response.status}`);
+                const data = await response.json();
+                keyboardHours = data.hours || [];
+                keyboardKeys = data.keys || [];
+                keyboardDailyActivity = data.daily_activity || [];
+                document.getElementById('keyboardPeriod').textContent = currentView === 'daily'
+                    ? dateLabel(currentDate)
+                    : periodLabel({ title: keyboardPeriodTitle(data) });
+                document.getElementById('keyboardHourlyTotal').textContent = `${Number(data.total_presses || 0).toLocaleString('zh-CN')} 次`;
+
+                renderKeyboardHeatmap(keyboardKeys);
+                renderKeyboardHourlyBars(keyboardHours);
+                renderKeyboardCalendar(keyboardDailyActivity);
+            } catch (error) {
+                console.error(error);
+                if (!silent) showToast('按键数据加载失败，请稍后重试');
+            } finally {
+                isRefreshing = false;
+                if (!silent) hideLoading();
+            }
+        }
+
+        function keyboardPeriodTitle(data) {
+            if (currentView === 'total') return '全部记录';
+            if (!data.start_date || !data.end_date) return dateLabel(currentDate);
+            const start = parseLocalDate(data.start_date);
+            const end = parseLocalDate(data.end_date);
+            if (currentView === 'weekly') return `${start.getMonth() + 1}月${start.getDate()}日 - ${end.getMonth() + 1}月${end.getDate()}日`;
+            if (currentView === 'monthly') return `${start.getFullYear()}年${start.getMonth() + 1}月`;
+            if (currentView === 'yearly') return `${start.getFullYear()}年`;
+            return dateLabel(currentDate);
+        }
+
+        function renderKeyboardHeatmap(keys) {
+            const countMap = new Map(keys.map(item => [item.key_name, item.press_count || 0]));
+            const max = Math.max(...keys.map(item => item.press_count || 0), 1);
+            document.querySelectorAll('.keyboard-key[data-key]').forEach(key => {
+                const count = countMap.get(key.dataset.key) || 0;
+                const intensity = count ? Math.max(.12, Math.sqrt(count / max)) : 0;
+                key.style.setProperty('--heat', intensity.toFixed(3));
+                key.classList.toggle('has-usage', count > 0);
+                key.dataset.countValue = count.toLocaleString('zh-CN');
+                key.setAttribute('aria-label', `${key.dataset.key}，${count} 次`);
+            });
+            const tooltip = document.getElementById('keyboardFloatTooltip');
+            if (tooltip.dataset.activeKey) {
+                tooltip.textContent = Number(countMap.get(tooltip.dataset.activeKey) || 0).toLocaleString('zh-CN');
+            }
+        }
+
+        function scheduleKeyboardHeatmapRender() {
+            if (keyboardHeatmapFrame) return;
+            keyboardHeatmapFrame = requestAnimationFrame(() => {
+                keyboardHeatmapFrame = 0;
+                renderKeyboardHeatmap(keyboardKeys);
+            });
+        }
+
+        function setupKeyboardTooltip() {
+            const visual = document.getElementById('keyboardVisual');
+            const tooltip = document.getElementById('keyboardFloatTooltip');
+            let activeKey = null;
+
+            function showForKey(key) {
+                activeKey = key;
+                tooltip.dataset.activeKey = key.dataset.key;
+                tooltip.textContent = key.dataset.countValue;
+                tooltip.classList.add('visible');
+            }
+
+            function moveWithPointer(event) {
+                if (!activeKey) return;
+                const rect = tooltip.getBoundingClientRect();
+                let left = event.clientX + 14;
+                let top = event.clientY - rect.height - 14;
+                if (left + rect.width > window.innerWidth - 8) {
+                    left = event.clientX - rect.width - 14;
+                }
+                if (top < 8) {
+                    top = event.clientY + 14;
+                }
+                tooltip.style.left = `${Math.max(8, left)}px`;
+                tooltip.style.top = `${Math.max(8, top)}px`;
+            }
+
+            function hide() {
+                activeKey = null;
+                delete tooltip.dataset.activeKey;
+                tooltip.classList.remove('visible');
+            }
+
+            visual.addEventListener('pointerover', event => {
+                const key = event.target.closest('.keyboard-key[data-key]');
+                if (!key) return;
+                showForKey(key);
+                moveWithPointer(event);
+            });
+            visual.addEventListener('pointermove', moveWithPointer);
+            visual.addEventListener('pointerleave', hide);
+        }
+
+        function renderKeyboardHourlyBars(hours) {
+            const canvas = document.getElementById('keyboardHourlyBars');
+            if (!canvas || canvas.clientWidth === 0) return;
+            const { ctx, w, h } = setupCanvas(canvas);
+            ctx.clearRect(0, 0, w, h);
+            drawGrid(ctx, w, h, 12, 30);
+            const max = Math.max(...hours.map(item => item.press_count || 0), 1);
+            const gap = w / 24;
+            const barW = Math.max(5, gap * .58);
+            hours.forEach((item, index) => {
+                const count = item.press_count || 0;
+                const height = count ? Math.max(3, count / max * (h - 54)) : 0;
+                const x = index * gap + (gap - barW) / 2;
+                const y = h - 30 - height;
+                const gradient = ctx.createLinearGradient(0, y, 0, h - 30);
+                gradient.addColorStop(0, '#2f8dfb');
+                gradient.addColorStop(1, '#75cbe8');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.roundRect(x, y, barW, height, Math.min(4, barW / 2));
+                ctx.fill();
+            });
+            ctx.fillStyle = 'rgba(60, 60, 67, .56)';
+            ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.textAlign = 'center';
+            [0, 6, 12, 18, 23].forEach(hour => ctx.fillText(`${hour}:00`, (hour + .5) * gap, h - 8));
+        }
+
+        function renderKeyboardCalendar(days) {
+            const calendar = document.getElementById('keyboardCalendar');
+            calendar.innerHTML = '';
+            if (!days.length) return;
+
+            const startDate = parseLocalDate(days[0].date);
+            const endDate = parseLocalDate(days[days.length - 1].date);
+            const max = Math.max(...days.map(day => day.press_count || 0), 1);
+            for (let index = 0; index < startDate.getDay(); index += 1) {
+                const spacer = document.createElement('span');
+                spacer.className = 'calendar-cell calendar-spacer';
+                calendar.appendChild(spacer);
+            }
+            days.forEach(day => {
+                const count = day.press_count || 0;
+                const ratio = count / max;
+                const level = count === 0 ? 0 : Math.min(5, Math.max(1, Math.ceil(Math.sqrt(ratio) * 5)));
+                const cell = document.createElement('span');
+                cell.className = `calendar-cell level-${level}`;
+                cell.title = `${day.date} · ${count.toLocaleString('zh-CN')} 次`;
+                cell.setAttribute('aria-label', `${day.date}，${count} 次按键`);
+                calendar.appendChild(cell);
+            });
+            document.getElementById('keyboardCalendarPeriod').textContent =
+                `${startDate.getFullYear()}/${String(startDate.getMonth() + 1).padStart(2, '0')}/${String(startDate.getDate()).padStart(2, '0')} - ` +
+                `${endDate.getFullYear()}/${String(endDate.getMonth() + 1).padStart(2, '0')}/${String(endDate.getDate()).padStart(2, '0')}`;
+        }
+
+        function keyNameFromEvent(event) {
+            const codeMap = {
+                Escape: 'Esc', Space: 'Space', Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace',
+                Delete: 'Del', Insert: 'Ins', Home: 'Home', End: 'End', PageUp: 'PgUp', PageDown: 'PgDn',
+                CapsLock: 'Caps Lock', ShiftLeft: 'ShiftLeft', ShiftRight: 'ShiftRight', ControlLeft: 'CtrlLeft', ControlRight: 'CtrlRight',
+                AltLeft: 'Alt', AltRight: 'Alt', MetaLeft: 'Win', MetaRight: 'Win', ContextMenu: 'Menu',
+                ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', PrintScreen: 'PrtSc',
+                ScrollLock: 'ScrLk', Pause: 'Pause', NumLock: 'Num', Backquote: '`', Minus: '-', Equal: '=',
+                BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'", Comma: ',',
+                Period: '.', Slash: '/', NumpadAdd: 'Num+', NumpadSubtract: 'Num-', NumpadMultiply: 'Num*', NumpadDivide: 'Num/',
+                NumpadDecimal: 'Num.', NumpadEnter: 'Enter', Numpad0: 'Num0', Numpad1: 'Num1', Numpad2: 'Num2', Numpad3: 'Num3',
+                Numpad4: 'Num4', Numpad5: 'Num5', Numpad6: 'Num6', Numpad7: 'Num7', Numpad8: 'Num8', Numpad9: 'Num9',
+            };
+            if (codeMap[event.code]) return codeMap[event.code];
+            if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3);
+            if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
+            if (/^F([1-9]|1[0-2])$/.test(event.code)) return event.code;
+            return null;
+        }
+
+        function animateKeyboardPress(event) {
+            if (currentFeature !== 'keyboard') return;
+            if (event.repeat) return;
+            const keyName = keyNameFromEvent(event);
+            if (!keyName) return;
+            let item = keyboardKeys.find(key => key.key_name === keyName);
+            if (!item) {
+                item = { key_name: keyName, press_count: 0 };
+                keyboardKeys.push(item);
+            }
+            item.press_count += 1;
+            scheduleKeyboardHeatmapRender();
+            document.querySelectorAll('.keyboard-key[data-key]').forEach(key => {
+                if (key.dataset.key !== keyName) return;
+                key.classList.add('is-key-down');
+                if (key._repeatAnimation) key._repeatAnimation.cancel();
+                key._repeatAnimation = key.animate([
+                    { filter: 'brightness(1.32) saturate(1.18)' },
+                    { filter: 'brightness(.96) saturate(1.05)', offset: .52 },
+                    { filter: 'brightness(1.08) saturate(1.1)' },
+                ], {
+                    duration: 125,
+                    easing: 'cubic-bezier(.2,.8,.3,1)',
+                });
+            });
+        }
+
+        function releaseKeyboardPress(event) {
+            const keyName = keyNameFromEvent(event);
+            if (!keyName) return;
+            document.querySelectorAll('.keyboard-key[data-key]').forEach(key => {
+                if (key.dataset.key !== keyName) return;
+                key.classList.remove('is-key-down');
+            });
+        }
+
+        function releaseAllKeyboardKeys() {
+            document.querySelectorAll('.keyboard-key.is-key-down').forEach(key => {
+                key.classList.remove('is-key-down');
+                if (key._repeatAnimation) key._repeatAnimation.cancel();
+            });
         }
 
         function renderSummary(apps) {
@@ -692,6 +1064,10 @@
         }
 
         window.addEventListener('resize', () => {
+            if (currentFeature === 'keyboard') {
+                renderKeyboardHourlyBars(keyboardHours);
+                return;
+            }
             renderTrendBars(trendBars, currentView);
             if (currentView === 'daily') renderHourlyBars(hourlyHours);
             if (isHourlyPanelVisible()) {
@@ -699,6 +1075,10 @@
             }
             updateAllUsageFlipHeight();
         });
+
+        window.addEventListener('keydown', animateKeyboardPress);
+        window.addEventListener('keyup', releaseKeyboardPress);
+        window.addEventListener('blur', releaseAllKeyboardKeys);
 
         document.getElementById('allUsageCard').addEventListener('contextmenu', event => {
             event.preventDefault();
@@ -715,6 +1095,7 @@
         (function init() {
             document.getElementById('datePicker').value = currentDate;
             document.getElementById('datePicker').max = todayStr();
+            setupKeyboardTooltip();
             loadData();
             setInterval(autoRefreshData, AUTO_REFRESH_MS);
             document.addEventListener('visibilitychange', () => {

@@ -43,7 +43,7 @@ button {
 
 .top-bar {
     display: grid;
-    grid-template-columns: 34px 1fr 56px;
+    grid-template-columns: 34px 1fr 34px 56px;
     align-items: center;
     gap: 10px;
     min-height: 38px;
@@ -139,6 +139,43 @@ button {
     background: #ffffff;
     color: var(--text);
     box-shadow: 0 2px 8px rgba(0, 0, 0, .13);
+}
+
+.keyboard-segmented {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.feature-switcher {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 300px;
+    height: 38px;
+    margin: -5px auto 18px;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: rgba(255, 255, 255, .68);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .035);
+}
+
+.feature-tab {
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: #77777d;
+    font-size: 14px;
+    font-weight: 720;
+    transition: background .18s ease, color .18s ease, box-shadow .18s ease;
+}
+
+.feature-tab.active {
+    background: #fff;
+    color: var(--text);
+    box-shadow: 0 2px 9px rgba(0, 0, 0, .12);
+}
+
+.is-hidden {
+    display: none !important;
 }
 
 .section {
@@ -598,6 +635,301 @@ button {
     transform: translate(-50%, 0);
 }
 
+.keyboard-panel {
+    --key-u: 34px;
+    --key-gap: 5px;
+    min-width: 0;
+}
+
+.keyboard-heading {
+    align-items: flex-end;
+}
+
+.keyboard-heading .section-title {
+    color: var(--text);
+    font-size: 20px;
+}
+
+.privacy-note {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.keyboard-card,
+.keyboard-detail-card,
+.keyboard-calendar-card {
+    border: 1px solid rgba(60, 60, 67, .08);
+    background: var(--card);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+}
+
+.keyboard-card {
+    padding: 17px;
+    overflow: hidden;
+}
+
+.keyboard-card-header,
+.detail-card-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.keyboard-card-header h2,
+.detail-card-heading h2 {
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 740;
+}
+
+.keyboard-card-header p,
+.detail-card-heading span {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.heat-legend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.heat-legend i {
+    width: 14px;
+    height: 10px;
+    border-radius: 3px;
+    background: #fff0f0;
+}
+
+.heat-legend i:nth-of-type(2) { background: #ffb3b3; }
+.heat-legend i:nth-of-type(3) { background: #ff6b64; }
+.heat-legend i:nth-of-type(4) { background: #ff2d20; }
+
+.keyboard-scroll {
+    margin-top: 15px;
+    overflow-x: auto;
+    padding: 0 0 7px;
+    scrollbar-width: thin;
+    scrollbar-color: #c9c9cf transparent;
+}
+
+.keyboard-visual {
+    width: max-content;
+    min-width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    padding: 14px;
+    border-radius: 13px;
+    background: #edeef1;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .72);
+}
+
+.keyboard-zone {
+    display: flex;
+    flex-direction: column;
+    gap: var(--key-gap);
+}
+
+.keyboard-row {
+    display: flex;
+    gap: var(--key-gap);
+}
+
+.keyboard-key {
+    --heat: 0;
+    width: var(--key-u);
+    height: var(--key-u);
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+    border: 0;
+    border-radius: 6px;
+    background: #fff;
+    color: #3d3d42;
+    font-size: 11px;
+    font-weight: 650;
+    box-shadow: 0 2px 0 #cfd1d6, inset 0 0 0 1px rgba(60, 60, 67, .06);
+    cursor: default;
+    transition: transform .12s ease, box-shadow .12s ease, background .18s ease;
+    position: relative;
+    overflow: visible;
+}
+
+.keyboard-key.has-usage {
+    background: color-mix(in srgb, #ff3b30 calc(var(--heat) * 88%), #ffffff);
+    color: color-mix(in srgb, #7f0905 calc(var(--heat) * 72%), #3d3d42);
+    box-shadow: 0 2px 0 color-mix(in srgb, #c5221a calc(var(--heat) * 68%), #cfd1d6);
+}
+
+.keyboard-key:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 0 #c6c8ce, 0 5px 10px rgba(0, 0, 0, .07);
+}
+
+.keyboard-key.is-key-down {
+    transform: translateY(2px) scale(.96);
+    box-shadow: 0 0 0 2px rgba(255, 59, 48, .25), inset 0 1px 3px rgba(121, 9, 3, .18);
+    filter: brightness(1.08) saturate(1.1);
+}
+
+.keyboard-float-tooltip {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 100;
+    width: max-content;
+    max-width: 220px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    background: rgba(29, 29, 31, .94);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 650;
+    line-height: 1.2;
+    min-width: 30px;
+    text-align: center;
+    pointer-events: none;
+    box-shadow: 0 7px 18px rgba(0, 0, 0, .2);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .1s ease;
+    will-change: left, top;
+}
+
+.keyboard-float-tooltip.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.key-special {
+    background-color: #f7f7f9;
+    color: #6f7077;
+    font-size: 9px;
+}
+
+.key-spacer { width: 12px; flex: 0 0 12px; }
+.kw-1 { width: var(--key-u); }
+.kw-1-25 { width: calc(var(--key-u) * 1.25 + var(--key-gap) * .25); }
+.kw-1-5 { width: calc(var(--key-u) * 1.5 + var(--key-gap) * .5); }
+.kw-1-75 { width: calc(var(--key-u) * 1.75 + var(--key-gap) * .75); }
+.kw-2 { width: calc(var(--key-u) * 2 + var(--key-gap)); }
+.kw-2-25 { width: calc(var(--key-u) * 2.25 + var(--key-gap) * 1.25); }
+.kw-2-75 { width: calc(var(--key-u) * 2.75 + var(--key-gap) * 1.75); }
+.kw-6-25 { width: calc(var(--key-u) * 6.25 + var(--key-gap) * 5.25); }
+
+.keyboard-nav-grid,
+.keyboard-numpad-grid {
+    display: grid;
+    gap: var(--key-gap);
+}
+
+.keyboard-nav-grid {
+    grid-template-columns: repeat(3, var(--key-u));
+    grid-template-rows: repeat(5, var(--key-u));
+}
+
+.keyboard-numpad-grid {
+    grid-template-columns: repeat(4, var(--key-u));
+    grid-template-rows: repeat(5, var(--key-u));
+}
+
+.keyboard-placeholder { visibility: hidden; }
+.kh-2 { grid-row: span 2; height: calc(var(--key-u) * 2 + var(--key-gap)); }
+.kw-2-grid { grid-column: span 2; width: calc(var(--key-u) * 2 + var(--key-gap)); }
+
+.keyboard-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    margin-top: 14px;
+}
+
+.keyboard-detail-card {
+    min-width: 0;
+    padding: 16px 18px;
+}
+
+#keyboardHourlyBars {
+    display: block;
+    width: 100%;
+    height: 178px;
+    margin-top: 8px;
+}
+
+.keyboard-calendar-card {
+    margin-top: 14px;
+    padding: 16px 18px 15px;
+}
+
+.keyboard-calendar-card .detail-card-heading p {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.calendar-scroll {
+    overflow-x: auto;
+    margin-top: 14px;
+    padding: 2px 0 8px;
+    scrollbar-width: thin;
+    scrollbar-color: #c9c9cf transparent;
+}
+
+.calendar-heatmap {
+    display: grid;
+    grid-template-rows: repeat(7, 12px);
+    grid-auto-flow: column;
+    grid-auto-columns: 12px;
+    gap: 4px;
+    width: max-content;
+    min-width: 100%;
+}
+
+.calendar-cell {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: #edf0f4;
+    box-shadow: inset 0 0 0 1px rgba(60, 60, 67, .05);
+}
+
+.calendar-cell.level-1 { background: #ffe0e0; }
+.calendar-cell.level-2 { background: #ffb3b3; }
+.calendar-cell.level-3 { background: #ff7b75; }
+.calendar-cell.level-4 { background: #ff473d; }
+.calendar-cell.level-5 { background: #f21f14; }
+.calendar-spacer { visibility: hidden; }
+
+.calendar-legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.calendar-legend i {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: #edf0f4;
+}
+
+.calendar-legend i:nth-of-type(2) { background: #ffe0e0; }
+.calendar-legend i:nth-of-type(3) { background: #ffb3b3; }
+.calendar-legend i:nth-of-type(4) { background: #ff7b75; }
+.calendar-legend i:nth-of-type(5) { background: #f21f14; }
+
 @keyframes spin {
     to {
         transform: rotate(360deg);
@@ -614,13 +946,19 @@ button {
     }
 
     .top-bar,
-    .segmented {
+    .segmented,
+    .feature-switcher {
         grid-column: 1 / -1;
     }
 
     .dashboard-grid {
         grid-column: 1;
-        grid-row: 3;
+        grid-row: 4;
+    }
+
+    .keyboard-panel {
+        grid-column: 1 / -1;
+        grid-row: 4;
     }
 
     .all-section,
@@ -649,13 +987,13 @@ button {
 
     .all-flip-front {
         grid-column: 1;
-        grid-row: 4;
+        grid-row: 5;
         margin-top: 18px;
     }
 
     .all-flip-back {
         grid-column: 2;
-        grid-row: 3 / span 2;
+        grid-row: 4 / span 2;
     }
 
     .all-section:not(.flipped) .all-flip-back .hourly-icon-list,
@@ -696,5 +1034,17 @@ button {
     .top-bar,
     .segmented {
         width: min(100%, 520px);
+    }
+
+    .feature-switcher {
+        width: min(100%, 300px);
+    }
+
+    .keyboard-detail-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .keyboard-card {
+        padding: 14px 10px;
     }
 }

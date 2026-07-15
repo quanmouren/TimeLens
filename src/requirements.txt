@@ -3,3 +3,4 @@ psutil>=5.9
 flask>=3.0
 pystray>=0.19
 Pillow>=10.0
+pynput>=1.7

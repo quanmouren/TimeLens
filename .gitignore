@@ -7,3 +7,6 @@ src/venv
 .venv/
 */__pycache__/
 *.pyc
+src/TimeLens.spec
+src\venv
+软著v1.0/
