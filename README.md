@@ -6,6 +6,10 @@ TimeLens 是一个本地运行的 Windows 应用使用时间统计工具。它�
 
 数据只保存在本机，不需要账号，也不会上传到云端。
 
+## 系列工具
+
+- [KeyTrace](https://github.com/quanmouren/KeyTrace)：Windows 本地键盘使用统计工具，提供 104 键热力图、按键频率与时长分析，并支持结合 TimeLens 查看指定应用的键盘使用详情。
+
 ## 功能
 
 - 自动记录前台应用使用时间
@@ -110,8 +114,8 @@ src
 
 本项目源码使用 MIT License。
 
-第三方运行时依赖清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，完整许可证正文见 [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)。两份文件由 `src/tools/generate_third_party_licenses.ps1` 使用 `pip-licenses` 从当前 `src/venv` 构建环境生成，不应手工维护。
+第三方运行时依赖清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，完整许可证正文见 [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)。
 
 ## 隐私说明
 
-TimeLens 只在本机记录应用名称、进程名称、窗口标题、使用时间以及聚合后的键位次数，用于生成本地统计视图。按键跟踪不会保存输入内容或按键顺序，项目本身也不包含网络上传逻辑。
+TimeLens 只在本机记录应用名称、进程名称、窗口标题、使用时间以及聚合后的键位次数，用于生成本地统计视图。
